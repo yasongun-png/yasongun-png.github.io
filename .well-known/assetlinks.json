@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "io.github.yasongun_png.twa",
+    "sha256_cert_fingerprints": ["3B:7D:68:76:50:96:FC:20:6E:2E:F2:1A:5A:3E:19:E3:A8:0A:36:D2:D9:7D:F0:7D:99:81:49:D5:1F:59:1A:C9"]
+  }
+}]
