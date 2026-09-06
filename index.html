@@ -1007,18 +1007,66 @@ const AudioEngine = (()=>{
     const order = freqs.map((f,i)=>({f,i})).filter(o=>o.f).sort((a,b)=> dir*(a.i-b.i));
     order.forEach((o,k)=> pluckString(o.f, now+k*0.018, opts.dur||1.1, opts.vol));
   }
+  // Drum synthesis for the rhythm/backing track. The user plays the actual guitar themselves,
+  // so the app's rhythm engine shouldn't also simulate a strummed guitar over it — it should
+  // sound like a drummer keeping time instead.
+  function getNoiseBuffer(c, duration){
+    const size = Math.max(1, Math.round(c.sampleRate*duration));
+    const buffer = c.createBuffer(1, size, c.sampleRate);
+    const data = buffer.getChannelData(0);
+    for(let i=0;i<size;i++) data[i] = Math.random()*2-1;
+    return buffer;
+  }
+  function kick(when){
+    const c = ensure(); if(!c) return;
+    const osc = c.createOscillator(); const g = c.createGain();
+    osc.type='sine';
+    osc.frequency.setValueAtTime(150, when);
+    osc.frequency.exponentialRampToValueAtTime(45, when+0.12);
+    g.gain.setValueAtTime(masterVol*1.0, when);
+    g.gain.exponentialRampToValueAtTime(0.001, when+0.16);
+    osc.connect(g); g.connect(c.destination);
+    osc.start(when); osc.stop(when+0.17);
+  }
+  function snare(when){
+    const c = ensure(); if(!c) return;
+    const noise = c.createBufferSource(); noise.buffer = getNoiseBuffer(c, 0.2);
+    const filter = c.createBiquadFilter(); filter.type='highpass'; filter.frequency.value=1200;
+    const noiseGain = c.createGain();
+    noiseGain.gain.setValueAtTime(masterVol*0.7, when);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, when+0.14);
+    noise.connect(filter); filter.connect(noiseGain); noiseGain.connect(c.destination);
+    noise.start(when); noise.stop(when+0.15);
+    const osc = c.createOscillator(); const oscGain = c.createGain();
+    osc.type='triangle'; osc.frequency.value=180;
+    oscGain.gain.setValueAtTime(masterVol*0.45, when);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, when+0.09);
+    osc.connect(oscGain); oscGain.connect(c.destination);
+    osc.start(when); osc.stop(when+0.1);
+  }
+  function hihat(when, open){
+    const c = ensure(); if(!c) return;
+    const dur = open?0.22:0.05;
+    const noise = c.createBufferSource(); noise.buffer = getNoiseBuffer(c, dur+0.02);
+    const filter = c.createBiquadFilter(); filter.type='highpass'; filter.frequency.value=7500;
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(masterVol*0.3, when);
+    gain.gain.exponentialRampToValueAtTime(0.001, when+dur);
+    noise.connect(filter); filter.connect(gain); gain.connect(c.destination);
+    noise.start(when); noise.stop(when+dur+0.02);
+  }
   // metronome / rhythm scheduler using lookahead
   let schedulerTimer=null, nextNoteTime=0, current16th=0, beatsPerMeasure=4, bpm=90, running=false;
-  let onBeatCb=null, pattern=null, patternIndex=0, currentChordShape=null;
+  let onBeatCb=null, pattern=null, patternIndex=0;
   const LOOKAHEAD=0.12, INTERVAL=25;
   function metroClick(when, accent){
     const c=ensure(); if(!c) return;
     const osc=c.createOscillator(); const g=c.createGain();
     osc.frequency.value = accent?1500:900;
-    g.gain.setValueAtTime(masterVol*0.9, when);
-    g.gain.exponentialRampToValueAtTime(0.001, when+0.06);
+    g.gain.setValueAtTime(masterVol*0.5, when);
+    g.gain.exponentialRampToValueAtTime(0.001, when+0.05);
     osc.connect(g); g.connect(c.destination);
-    osc.start(when); osc.stop(when+0.07);
+    osc.start(when); osc.stop(when+0.06);
   }
   function scheduler(){
     const c = ensure(); if(!c) return;
@@ -1027,15 +1075,12 @@ const AudioEngine = (()=>{
       metroClick(nextNoteTime, beatInMeasure===0);
       if(pattern && pattern.length){
         const step = pattern[current16th % pattern.length];
-        if(step && step!=='-' ){
-          if(currentChordShape){
-            if(step==='DU'||step==='UU'){
-              strumChord(currentChordShape,{direction:'down', dur:0.35, when:nextNoteTime});
-            } else {
-              strumChord(currentChordShape,{direction: step==='U'?'up':'down', dur:0.5});
-            }
-          }
-        }
+        const secondsPerBeat = 60.0/bpm;
+        if(step==='D'){ kick(nextNoteTime); hihat(nextNoteTime,false); }
+        else if(step==='U'){ snare(nextNoteTime); hihat(nextNoteTime,false); }
+        else if(step==='DU'){ kick(nextNoteTime); hihat(nextNoteTime+secondsPerBeat*0.5,false); }
+        else if(step==='UU'){ snare(nextNoteTime); hihat(nextNoteTime+secondsPerBeat*0.5,false); }
+        // '-' is a rest: no hit.
       }
       if(onBeatCb) onBeatCb(beatInMeasure, nextNoteTime);
       const secondsPerBeat = 60.0/bpm;
@@ -1054,7 +1099,6 @@ const AudioEngine = (()=>{
       running=true; scheduler();
     },
     setBpm(v){ bpm=v; },
-    setChordShapeForStrum(shape){ currentChordShape = shape; },
     setPattern(p){ pattern = p; },
     stopMetronome(){ running=false; clearTimeout(schedulerTimer); },
     isRunning(){ return running; },
@@ -1657,8 +1701,6 @@ function onBeat(beatInMeasure, when){
   beatCounter++;
   const dots = $$('.beatdot');
   dots.forEach((d,i)=> d.classList.toggle('on', i===beatInMeasure));
-  const shape = getChordShape(currentActiveChordName());
-  AudioEngine.setChordShapeForStrum(shape);
 }
 function currentActiveChordName(){
   const idx = State.player.activeIdx;
@@ -1865,7 +1907,6 @@ function renderRhythmGrid(){
 function previewRhythm(r){
   AudioEngine.ensure();
   AudioEngine.setPattern(r.pattern);
-  AudioEngine.setChordShapeForStrum(getChordShape('G'));
   AudioEngine.startMetronome(r.bpmSuggest, r.timeSig, ()=>{});
   toast(`${r.name} çalıyor...`);
   setTimeout(()=> AudioEngine.stopMetronome(), 4000);
