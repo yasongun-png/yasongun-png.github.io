@@ -1461,12 +1461,15 @@ function renderLyrics(){
     const repeat = sec.repeat||1;
     const repeatBadge = repeat>1 ? `<span class="repeat-badge">×${repeat}</span>` : '';
     const repeatBtn = State.isAdmin ? `<button class="btn icon repeat-edit" data-si="${si}" title="Tekrar sayısı">🔁</button>` : '';
-    return `<div class="section-block"><div class="section-title">${escapeHtml(sec.name)}${repeatBadge}${repeatBtn}</div>${lines}</div>`;
+    const copyBtn = State.isAdmin ? `<button class="btn icon section-copy" data-si="${si}" title="Bölümü kopyala (söz + akor + süreleriyle)">📋</button>` : '';
+    return `<div class="section-block"><div class="section-title">${escapeHtml(sec.name)}${repeatBadge}${repeatBtn}${copyBtn}</div>${lines}</div>`;
   }).join('');
 }
 $('#lyricsWrap').addEventListener('click', e=>{
   const repeatBtn = e.target.closest('.repeat-edit');
   if(repeatBtn){ openRepeatPopoverAt(repeatBtn, +repeatBtn.dataset.si); return; }
+  const copyBtn = e.target.closest('.section-copy');
+  if(copyBtn){ copySection(+copyBtn.dataset.si); return; }
   const chordTag = e.target.closest('.chordtag');
   if(chordTag){
     showChordDetail(chordTag.dataset.chord);
@@ -1930,6 +1933,29 @@ function closeBeatPopover(){
     State.player.resumeAfterBeatEdit = false;
     startPlayback();
   }
+}
+// Duplicate a section — lyrics, chords, and each chord's set beat-gap — as a new section right
+// after it, for writing a repeat (verse 2 with the same chords, a chorus sung again) by copying
+// instead of retyping and re-tuning every chord's timing from scratch.
+async function copySection(si){
+  const s = State.currentSong;
+  const sections = s.sections;
+  const startIdx = flattenWordUnits(sections.slice(0,si)).length;
+  const countInSec = flattenWordUnits([sections[si]]).length;
+  const totalChords = flattenWordUnits(sections).length;
+  const gaps = (s.chordGaps||[]).slice();
+  while(gaps.length < totalChords) gaps.push(s.chordDuration||2);
+  const slice = gaps.slice(startIdx, startIdx+countInSec);
+  gaps.splice(startIdx+countInSec, 0, ...slice);
+  const clone = JSON.parse(JSON.stringify(sections[si]));
+  clone.name = clone.name + ' (kopya)';
+  sections.splice(si+1, 0, clone);
+  s.chordGaps = gaps;
+  s.updated = Date.now();
+  await DB.put('songs', s);
+  buildTimeline();
+  renderLyrics();
+  toast('Bölüm akorları ve süreleriyle kopyalandı');
 }
 function openRepeatPopoverAt(btn, si){
   const s = State.currentSong;
