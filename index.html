@@ -196,6 +196,21 @@ a{color:var(--accent);}
   padding:12px 20px 20px; background:var(--bg-elev); border-top:1px solid var(--border); z-index:5;
 }
 
+/* chord timing editor */
+.timing-seg{
+  flex-shrink:0; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  background:var(--bg-elev); border:1px solid var(--border); border-radius:6px; margin-right:3px; font-weight:700; color:var(--chord);
+}
+.timing-seg .timing-beats{font-size:.65rem; color:var(--text-dim); font-weight:400;}
+.timing-handle{
+  position:absolute; right:-7px; top:-4px; bottom:-4px; width:14px; cursor:ew-resize; z-index:2;
+}
+.timing-handle::after{
+  content:''; position:absolute; left:50%; top:0; bottom:0; width:4px; transform:translateX(-50%);
+  background:var(--accent); border-radius:2px;
+}
+.timing-handle:hover::after, .timing-handle:active::after{ background:var(--danger); width:5px; }
+
 /* chord picker popover */
 #chordPicker{
   position:fixed; z-index:300; background:var(--bg-elev); border:1px solid var(--border); border-radius:10px;
@@ -1273,6 +1288,7 @@ function renderSongHeader(){
       <div class="editbtns" style="display:flex; gap:6px; flex-wrap:wrap;">
         <button class="btn icon" id="btnFavToggle" title="Favori">${s.favorite?'★':'☆'}</button>
         ${State.isAdmin?'<button class="btn icon" id="btnEditSong" title="Düzenle">✏️</button>':''}
+        ${State.isAdmin?'<button class="btn icon" id="btnTimingEditor" title="Akor Zamanlamasını Düzenle">📏</button>':''}
         <button class="btn icon" id="btnExportSong" title="Dışa Aktar">📤</button>
         <button class="btn icon" id="btnPrintSong" title="Yazdır / PDF">🖨️</button>
         <button class="btn icon" id="btnAddToSetlist" title="Setliste ekle">📋</button>
@@ -1295,6 +1311,7 @@ function renderSongHeader(){
     </div>`;
   $('#btnFavToggle').onclick=()=>{ s.favorite=!s.favorite; DB.put('songs',s); renderSongHeader(); renderSongList(); };
   if($('#btnEditSong')) $('#btnEditSong').onclick=()=> openEditor(s);
+  if($('#btnTimingEditor')) $('#btnTimingEditor').onclick=()=> openChordTimingEditor();
   $('#btnExportSong').onclick=()=> openExportModal(s);
   $('#btnPrintSong').onclick=()=> printSong(s);
   $('#btnAddToSetlist').onclick=()=> openAddToSetlistModal(s);
@@ -1493,17 +1510,21 @@ function buildTimeline(){
   const s = State.currentSong;
   const sections = effectiveSections();
   const secondsPerBeat = 60/s.bpm;
-  const chordBeats = s.chordDuration || 2;
+  const defaultBeats = s.chordDuration || 2;
+  const overrides = s.chordTimings || []; // per-chord beat lengths in sequence order, hand-tuned in the timing editor
   let t = 0;
   const timeline = [];
   const flatUnits = [];
   sections.forEach((sec,si)=> sec.lines.forEach((line,li)=> line.units.forEach((u,ui)=>{
     flatUnits.push({sec:si,line:li,u:ui,chord:u.chord});
   })));
+  let chordIdx = 0;
   flatUnits.forEach(fu=>{
     if(fu.chord){
-      timeline.push({t, chord:fu.chord, sec:fu.sec, line:fu.line, u:fu.u});
-      t += chordBeats*secondsPerBeat;
+      const beats = overrides[chordIdx]!=null ? overrides[chordIdx] : defaultBeats;
+      timeline.push({t, chord:fu.chord, sec:fu.sec, line:fu.line, u:fu.u, beats});
+      t += beats*secondsPerBeat;
+      chordIdx++;
     }
   });
   State.player.timeline = timeline;
@@ -1666,6 +1687,90 @@ function stepChord(dir){
 $('#lyricsWrap').addEventListener('pointerdown', ()=>{
   if(State.player.playing && State.player.autoScrollSpeed>0){ State.player.autoScrollSpeed = 0; toast('Otomatik kaydırma durduruldu (manuel)'); }
 });
+
+/* =========================================================================
+   CHORD TIMING EDITOR — drag each chord's boundary (like moving a barline
+   on a music staff) to set exactly how many beats it holds, instead of a
+   single fixed spacing applied to the whole song.
+   ========================================================================= */
+function openChordTimingEditor(){
+  const s = State.currentSong;
+  buildTimeline();
+  const chords = State.player.timeline.map(seg=> ({chord:seg.chord, beats:seg.beats}));
+  if(!chords.length){ toast('Bu şarkıda henüz akor yok','err'); return; }
+  const pxPerBeat = 36;
+  const modal = openModal(`
+    <h2>📏 Akor Zamanlamasını Düzenle</h2>
+    <div style="font-size:.8rem;color:var(--text-dim);margin-bottom:10px;">
+      Porte üzerindeki ölçü çizgisi gibi düşünün: her akorun sağ kenarını sürükleyerek gerçekte kaç vuruş sürdüğünü ayarlayın. İki akor arası artık hep aynı (örn. 4/4) olmak zorunda değil.
+    </div>
+    <div id="timingRuler" style="overflow-x:auto; border:1px solid var(--border); border-radius:8px; padding:16px 8px; background:var(--bg-elev2); touch-action:none;">
+      <div id="timingTrack" style="display:flex; align-items:stretch; height:70px; position:relative; white-space:nowrap;"></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:.8rem; color:var(--text-dim);">
+      <span>Toplam: <b id="timingTotalBeats">0</b> vuruş (~<span id="timingTotalSec">0</span> sn)</span>
+      <span>BPM: ${s.bpm}</span>
+    </div>
+    <div class="modal-actions" style="justify-content:space-between;">
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="timingReset">Sıfırla</button>
+        <button class="btn" id="timingPreview">▶ Önizle</button>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="timingCancel">İptal</button>
+        <button class="btn primary" id="timingSave">Kaydet</button>
+      </div>
+    </div>
+  `);
+  function renderTrack(){
+    const track = $('#timingTrack', modal);
+    track.innerHTML = chords.map((c,i)=>{
+      const width = Math.max(28, c.beats*pxPerBeat);
+      return `<div class="timing-seg" data-i="${i}" style="width:${width}px;">
+        <span class="timing-chord">${escapeHtml(c.chord)}</span>
+        <span class="timing-beats">${c.beats}v</span>
+        ${i<chords.length-1?`<div class="timing-handle" data-i="${i}"></div>`:''}
+      </div>`;
+    }).join('');
+    const totalBeats = chords.reduce((a,c)=>a+c.beats,0);
+    $('#timingTotalBeats',modal).textContent = (Math.round(totalBeats*100)/100);
+    $('#timingTotalSec',modal).textContent = (totalBeats*60/s.bpm).toFixed(1);
+  }
+  renderTrack();
+  let dragging = null;
+  const trackEl = $('#timingTrack', modal);
+  trackEl.addEventListener('pointerdown', e=>{
+    const handle = e.target.closest('.timing-handle');
+    if(!handle) return;
+    dragging = {i:+handle.dataset.i, startX:e.clientX, startBeats:chords[+handle.dataset.i].beats};
+    handle.setPointerCapture(e.pointerId);
+  });
+  trackEl.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const deltaBeats = (e.clientX - dragging.startX)/pxPerBeat;
+    let newBeats = Math.round((dragging.startBeats + deltaBeats)*4)/4;
+    newBeats = clamp(newBeats, 0.25, 32);
+    chords[dragging.i].beats = newBeats;
+    renderTrack();
+  });
+  ['pointerup','pointercancel'].forEach(evt=> trackEl.addEventListener(evt, ()=>{ dragging=null; }));
+  $('#timingReset',modal).onclick = ()=>{ chords.forEach(c=> c.beats = s.chordDuration||2); renderTrack(); };
+  $('#timingPreview',modal).onclick = ()=>{
+    s.chordTimings = chords.map(c=>c.beats);
+    buildTimeline();
+    closeModal();
+    startPlayback();
+  };
+  $('#timingCancel',modal).onclick = ()=>{ buildTimeline(); closeModal(); };
+  $('#timingSave',modal).onclick = async ()=>{
+    s.chordTimings = chords.map(c=>c.beats);
+    s.updated = Date.now();
+    await DB.put('songs', s);
+    buildTimeline();
+    closeModal();
+    toast('Akor zamanlaması kaydedildi');
+  };
+}
 
 /* =========================================================================
    CHORD LIBRARY VIEW
