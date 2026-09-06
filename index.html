@@ -28,6 +28,7 @@
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;height:100%;}
+html{overflow-x:hidden; width:100%;}
 body{
   background:var(--bg); color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -598,6 +599,86 @@ function renderChordSVG(name, shape, size){
 }
 
 /* =========================================================================
+   "CHORD ABOVE LYRIC" SHEET AUTO-DETECTION
+   Users often paste songs in the classic tab-site layout:
+       Dm          C           Bb          Am
+       Bak neler oldu, zor zamanlar bizi buldu
+   Detect lines that consist only of chord tokens, and fold them into the
+   line below at the same column position, producing normal [Chord]word
+   ChordPro text — so the user never has to know ChordPro exists.
+   ========================================================================= */
+const CHORD_TOKEN_RE = /^[A-G](#|b)?(maj7|maj9|m7b5|madd9|min7|min|m7|m9|m6|m|sus2|sus4|sus|add9|dim7|dim|aug|6\/9|6|7sus4|7|9|11|13|5)?(\/[A-G](#|b)?)?$/i;
+function isChordLine(line){
+  const trimmed = line.trim();
+  if(!trimmed) return false;
+  const tokens = trimmed.split(/\s+/);
+  return tokens.every(t=> CHORD_TOKEN_RE.test(t));
+}
+function mergeChordLyricLine(chordLine, lyricLine){
+  const chordMatches = [];
+  { const re=/\S+/g; let m; while((m=re.exec(chordLine))) chordMatches.push({chord:m[0], col:m.index, end:m.index+m[0].length}); }
+  if(!chordMatches.length) return lyricLine;
+  const wordMatches = [];
+  { const re=/\S+/g; let m; while((m=re.exec(lyricLine))) wordMatches.push({start:m.index, end:m.index+m[0].length}); }
+  if(!wordMatches.length) return chordMatches.map(c=>`[${c.chord}]`).join(' ');
+  // Chord-line spacing copy/pasted through chat or different fonts rarely lines up column-for-
+  // column with the lyric line below it. Scale each chord's column proportionally against the
+  // extent of both lines, then snap it to the nearest word start (moving left-to-right, never
+  // backwards) instead of inserting at the literal character offset — which can otherwise land
+  // mid-word.
+  const chordExtent = Math.max(...chordMatches.map(c=>c.end));
+  const lyricExtent = wordMatches[wordMatches.length-1].end;
+  const scale = chordExtent>0 ? lyricExtent/chordExtent : 1;
+  const byWord = new Map(); // wordIndex -> [chords in order]
+  let cursor = 0;
+  chordMatches.forEach(cm=>{
+    const target = cm.col*scale;
+    let bestIdx = cursor, bestDist = Infinity;
+    for(let i=cursor;i<wordMatches.length;i++){
+      const d = Math.abs(wordMatches[i].start-target);
+      if(d<bestDist){ bestDist=d; bestIdx=i; }
+      else if(wordMatches[i].start>target) break;
+    }
+    if(!byWord.has(bestIdx)) byWord.set(bestIdx, []);
+    byWord.get(bestIdx).push(cm.chord);
+    cursor = bestIdx;
+  });
+  let line = lyricLine;
+  const order = [...byWord.keys()].sort((a,b)=> b-a); // insert right-to-left so earlier offsets stay valid
+  order.forEach(idx=>{
+    const tag = byWord.get(idx).map(c=>`[${c}]`).join('');
+    const pos = wordMatches[idx].start;
+    line = line.slice(0,pos) + tag + line.slice(pos);
+  });
+  return line;
+}
+function chordSheetToChordPro(text){
+  const raw = (text||'').replace(/\r\n/g,'\n').split('\n');
+  const out = [];
+  let i = 0;
+  let foundAny = false;
+  while(i < raw.length){
+    const line = raw[i];
+    if(line.trim()==='' ){ out.push(''); i++; continue; }
+    if(isChordLine(line)){
+      foundAny = true;
+      const next = raw[i+1];
+      if(next!==undefined && next.trim()!=='' && !isChordLine(next)){
+        out.push(mergeChordLyricLine(line, next));
+        i += 2;
+      } else {
+        out.push(line.trim().split(/\s+/).map(c=>`[${c}]`).join(' '));
+        i += 1;
+      }
+    } else {
+      out.push(line);
+      i += 1;
+    }
+  }
+  return {text: out.join('\n'), hadChordLines: foundAny};
+}
+
+/* =========================================================================
    CHORDPRO-LIKE PARSING  ([Chord]lyric text, {section: name} lines)
    ========================================================================= */
 function parseChordProBody(text){
@@ -625,7 +706,10 @@ function parseChordProBody(text){
     let idx = 0;
     while((m = re.exec(raw))){
       const textBefore = raw.slice(idx, m.index);
-      if(textBefore) out.push({chord:pendingChord, text:textBefore});
+      // Push even when textBefore is empty as long as a chord is already pending — two
+      // adjacent markers like [C][Bb]word are a real (if quick) chord change and must not
+      // silently drop the first one just because there's no lyric text between them.
+      if(textBefore || pendingChord!==null) out.push({chord:pendingChord, text:textBefore});
       pendingChord = m[1];
       idx = re.lastIndex;
     }
@@ -1668,9 +1752,9 @@ function openEditor(song){
       <button class="btn" id="modeAdvanced">⚙ Gelişmiş Mod (ChordPro)</button>
     </div>
     <div id="pasteArea" class="formrow">
-      <label>Şarkı sözlerini buraya yapıştırın (akorsuz olabilir)</label>
-      <textarea id="ePaste" rows="4" placeholder="Bu akşam yine yalnızım..."></textarea>
-      <button class="btn" id="btnApplyPaste" style="align-self:flex-start;">Sözleri Yükle</button>
+      <label>Şarkı sözlerini buraya yapıştırın — akorsuz olabilir, ya da akor satırı sözün tam üstünde olacak şekilde yapıştırırsanız akorlar otomatik yerleşir</label>
+      <textarea id="ePaste" rows="6" placeholder="Dm          C           Bb          Am&#10;Bak neler oldu, zor zamanlar bizi buldu"></textarea>
+      <button class="btn" id="btnApplyPaste" style="align-self:flex-start;">Sözleri (ve Akorları) Yükle</button>
     </div>
     <div id="editorSimple"><div id="editorLyricArea"></div></div>
     <div id="editorAdvanced" class="hidden"><textarea id="editorAdvancedText"></textarea></div>
@@ -1699,10 +1783,11 @@ function openEditor(song){
   $('#btnApplyPaste',modal).onclick = ()=>{
     const txt = $('#ePaste',modal).value;
     if(!txt.trim()) return;
-    const newSections = [{name:'Verse', lines: txt.split('\n').map(l=> ({raw:l, units:[{chord:null, text:l}]})) }];
+    const {text: converted, hadChordLines} = chordSheetToChordPro(txt);
+    const newSections = parseChordProBody(converted);
     workingSections.length=0; workingSections.push(...newSections);
     syncSimpleFromWorking(); syncAdvancedFromWorking();
-    toast('Sözler yüklendi. Akor eklemek için kelimeye tıklayın.');
+    toast(hadChordLines ? 'Sözler ve akorlar otomatik yerleştirildi.' : 'Sözler yüklendi. Akor eklemek için kelimeye tıklayın.');
   };
   $('#editorLyricArea',modal).addEventListener('click', e=>{
     const tag = e.target.closest('.chordtag');
@@ -1825,7 +1910,7 @@ function printSong(s){
 function openImportModal(){
   const modal = openModal(`<h2>Şarkı İçe Aktar</h2>
     <div class="formrow"><label>Dosya seç (.json / .cho / .txt)</label><input type="file" id="impFile" accept=".json,.cho,.txt,.chordpro"></div>
-    <div class="formrow"><label>Veya doğrudan yapıştır (ChordPro/TXT)</label><textarea id="impPaste" rows="8"></textarea></div>
+    <div class="formrow"><label>Veya doğrudan yapıştır — ChordPro, düz TXT, ya da akor satırı sözün üstünde olan klasik format (akorlar otomatik yerleşir)</label><textarea id="impPaste" rows="8"></textarea></div>
     <div class="modal-actions"><button class="btn" id="impCancel">İptal</button><button class="btn primary" id="impGo">İçe Aktar</button></div>`);
   $('#impCancel',modal).onclick = closeModal;
   $('#impGo',modal).onclick = async ()=>{
@@ -1847,10 +1932,11 @@ function openImportModal(){
         const tempoM = text.match(/\{tempo:\s*([^}]+)\}/i);
         const timeM = text.match(/\{time:\s*([^}]+)\}/i);
         const capoM = text.match(/\{capo:\s*([^}]+)\}/i);
+        const {text: converted} = chordSheetToChordPro(text);
         song = makeSong({
           title: (titleM?titleM[1]:'İçe Aktarılan').trim(), artist:(artistM?artistM[1]:'').trim(),
           key:(keyM?keyM[1]:'C').trim(), bpm: tempoM?+tempoM[1]:100, timeSig:(timeM?timeM[1]:'4/4').trim(), capo: capoM?+capoM[1]:0,
-          body: text
+          body: converted
         });
       }
       song.id = uid(); song.created=Date.now(); song.updated=Date.now();
@@ -1978,6 +2064,20 @@ function closeSidebarMobile(){ $('#sidebar').classList.remove('open'); $('#sideb
 $('#menuToggle').addEventListener('click', ()=>{ $('#sidebar').classList.toggle('open'); $('#sidebarScrim').classList.toggle('show'); });
 $('#sidebarScrim').addEventListener('click', closeSidebarMobile);
 $('#rightScrim').addEventListener('click', ()=>{ $('#rightpanel').classList.remove('open'); $('#rightScrim').classList.remove('show'); });
+
+// The off-canvas sidebar/right panel sit just past the right/left edge of the viewport via
+// transform so they can slide in. Their geometry still technically extends past the visible
+// area, and some mobile browsers respond to a focused form field by auto-scrolling the nearest
+// scroll container horizontally into view of that geometry, visibly shifting the whole page
+// sideways even though overflow is set to hidden (overflow:hidden blocks user-drag scrolling
+// but not this programmatic kind). Forcibly snap back rather than chase the underlying cause
+// across every current and future browser quirk.
+function snapHorizontalScroll(){
+  if(document.documentElement.scrollLeft) document.documentElement.scrollLeft = 0;
+  if(document.body.scrollLeft) document.body.scrollLeft = 0;
+}
+document.addEventListener('scroll', snapHorizontalScroll, {capture:true, passive:true});
+window.addEventListener('resize', snapHorizontalScroll, {passive:true});
 
 /* =========================================================================
    INIT
