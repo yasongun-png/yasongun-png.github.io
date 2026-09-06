@@ -2401,6 +2401,16 @@ function openImportModal(){
         const obj = JSON.parse(text);
         song = makeSong({title:obj.title||'İçe Aktarılan', artist:obj.artist, key:obj.key||'C', bpm:obj.bpm||100, timeSig:obj.timeSig||'4/4', capo:obj.capo||0, body:''});
         song.sections = obj.sections || song.sections;
+        // Optional extras a hand-built import can carry so a song comes in fully set up in one
+        // shot — chord timing included — instead of needing every gap re-tuned by hand afterward.
+        if(obj.chordGaps) song.chordGaps = obj.chordGaps;
+        if(obj.chordDuration!=null) song.chordDuration = obj.chordDuration;
+        if(obj.scrollSpeed!=null) song.scrollSpeed = obj.scrollSpeed;
+        if(obj.rhythmId) song.rhythmId = obj.rhythmId;
+        if(obj.tags) song.tags = obj.tags;
+        if(obj.genre) song.genre = obj.genre;
+        if(obj.notes) song.notes = obj.notes;
+        if(obj.album) song.album = obj.album;
       } else {
         // ChordPro or TXT
         const titleM = text.match(/\{title:\s*([^}]+)\}/i);
