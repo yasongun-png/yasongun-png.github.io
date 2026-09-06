@@ -139,25 +139,33 @@ a{color:var(--accent);}
   font-weight:700; margin-bottom:6px; border-left:3px solid var(--accent); padding-left:8px;
 }
 .lyric-line{
-  display:block; line-height:1.5; font-size:var(--font-lyrics); margin-bottom:0; padding-top:2.3em;
+  display:block; line-height:1.5; font-size:var(--font-lyrics); margin-bottom:2px;
 }
-.clu{position:relative; display:inline-block; vertical-align:bottom; margin-right:2px; white-space:normal;}
-.clu .lyricword{white-space:pre-wrap;}
+/* Each word is a small column: a chord "slot" row on top, the word itself below. The slot is
+   always rendered — even empty, as an invisible placeholder — so every word reserves the same
+   height and lines up on one baseline, and critically, the chord chip is a normal (non-absolute)
+   box that takes up real horizontal space. Two chords placed right next to each other (no lyric
+   text between a quick change) used to float free of the layout and visually overlap whatever
+   came next; now each one pushes the next word over like any other inline content would. */
+.clu{position:relative; display:inline-flex; flex-direction:column; align-items:flex-start; vertical-align:bottom; margin-right:2px;}
+.clu .lyricword{white-space:pre-wrap; cursor:text;}
 .clu .chordtag{
-  position:absolute; top:-1.7em; left:0; color:var(--chord); background:var(--chord-bg); font-weight:800;
-  font-size:var(--font-chord); line-height:1; cursor:pointer; user-select:none; padding:2px 6px; border-radius:5px;
-  white-space:nowrap; border:1px solid var(--chord-bg); box-shadow:0 1px 2px rgba(0,0,0,.08); z-index:2;
+  color:var(--chord); background:var(--chord-bg); font-weight:800;
+  font-size:var(--font-chord); line-height:1.15; cursor:pointer; user-select:none; padding:1px 6px 2px;
+  border-radius:5px; white-space:nowrap; border:1px solid var(--chord-bg); box-shadow:0 1px 2px rgba(0,0,0,.08);
+  margin-bottom:2px; align-self:flex-start;
 }
+.clu .chordtag.chordtag-empty{visibility:hidden;}
 .clu .chordtag:hover{filter:brightness(1.1);}
-.clu .lyricword{cursor:text;}
 .clu .lyricword.clickable{cursor:pointer; border-bottom:1px dashed transparent;}
 .clu .lyricword.clickable:hover{border-bottom:1px dashed var(--accent);}
 .clu.playing-chord{z-index:3;}
 /* Scale from the bottom-left corner (not font-size/padding) so the enlarged badge grows
-   upward into the empty space above it instead of downward into the lyric word underneath. */
+   upward/rightward on top of neighboring content (transforms don't affect layout) instead of
+   shoving the lyric line itself around. */
 .clu.playing-chord .chordtag{
   background:var(--active); color:#fff; border-color:var(--active);
-  transform:scale(1.3); transform-origin:bottom left; box-shadow:0 3px 8px rgba(0,0,0,.25);
+  transform:scale(1.3); transform-origin:bottom left; box-shadow:0 3px 8px rgba(0,0,0,.25); position:relative; z-index:4;
 }
 .clu.playing-chord .lyricword{font-weight:800; text-decoration:underline; text-decoration-color:var(--active); text-decoration-thickness:3px; text-underline-offset:4px;}
 .clu.upcoming-chord .chordtag{background:var(--upcoming); color:#000; border-color:var(--upcoming);}
@@ -382,6 +390,14 @@ function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+function chordTagSpan(chord){
+  // Always render the slot, even without a chord, as an invisible placeholder — every word
+  // then reserves the same height (consistent baseline) and the chip is a normal box that
+  // takes up real width, so it can never visually overlap a neighboring word or chord.
+  return chord
+    ? `<span class="chordtag" data-chord="${escapeHtml(chord)}">${escapeHtml(chord)}</span>`
+    : `<span class="chordtag chordtag-empty">·</span>`;
+}
 function toast(msg, isError){
   const t = $('#toast');
   t.textContent = msg;
@@ -1413,7 +1429,7 @@ function renderLyrics(){
       }
       const clus = line.units.map((u,ui)=>{
         const words = u.text.length ? escapeHtml(u.text) : '&nbsp;';
-        return `<span class="clu" data-sec="${si}" data-line="${li}" data-u="${ui}">${u.chord?`<span class="chordtag" data-chord="${escapeHtml(u.chord)}">${escapeHtml(u.chord)}</span>`:''}<span class="lyricword clickable" data-sec="${si}" data-line="${li}" data-u="${ui}">${words}</span></span>`;
+        return `<span class="clu" data-sec="${si}" data-line="${li}" data-u="${ui}">${chordTagSpan(u.chord)}<span class="lyricword clickable" data-sec="${si}" data-line="${li}" data-u="${ui}">${words}</span></span>`;
       }).join('');
       return `<div class="lyric-line">${clus}</div>`;
     }).join('');
@@ -2122,7 +2138,7 @@ function openEditor(song){
     $('#editorLyricArea',modal).innerHTML = workingSections.map((sec,si)=>
       `<div class="section-title">${escapeHtml(sec.name)}</div>` +
       sec.lines.map((line,li)=> line.units.length? `<div class="lyric-line">${line.units.map((u,ui)=>
-        `<span class="clu" data-sec="${si}" data-line="${li}" data-u="${ui}">${u.chord?`<span class="chordtag" data-chord="${escapeHtml(u.chord)}">${escapeHtml(u.chord)}</span>`:''}<span class="lyricword clickable">${escapeHtml(u.text)||'&nbsp;'}</span></span>`
+        `<span class="clu" data-sec="${si}" data-line="${li}" data-u="${ui}">${chordTagSpan(u.chord)}<span class="lyricword clickable">${escapeHtml(u.text)||'&nbsp;'}</span></span>`
       ).join('')}</div>` : `<div class="emptyline"></div>`
       ).join('')
     ).join('');
