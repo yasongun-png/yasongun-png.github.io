@@ -1286,6 +1286,12 @@ function renderSongHeader(){
       <span class="pill">🪗 Capo: <select id="capoSelect">${Array.from({length:13},(_,i)=>`<option value="${i}" ${s.capo===i?'selected':''}>${i}</option>`).join('')}</select></span>
       <span class="pill">🥁 Ritim: <select id="rhythmSelect">${State.rhythms.map(r=>`<option value="${r.id}" ${s.rhythmId===r.id?'selected':''}>${escapeHtml(r.name)}</option>`).join('')}</select></span>
       <span class="pill">🎼 Transpoze: <button id="transDown">–</button> <span id="transVal">${State.transpose>0?'+':''}${State.transpose}</span> <button id="transUp">+</button></span>
+      <span class="pill">🎯 Akor Süresi: <select id="chordDurSelect">
+        <option value="1" ${(s.chordDuration||2)===1?'selected':''}>1 vuruş</option>
+        <option value="2" ${(s.chordDuration||2)===2?'selected':''}>2 vuruş</option>
+        <option value="4" ${(s.chordDuration||2)===4?'selected':''}>4 vuruş (1 ölçü)</option>
+        <option value="8" ${(s.chordDuration||2)===8?'selected':''}>8 vuruş (2 ölçü)</option>
+      </select></span>
     </div>`;
   $('#btnFavToggle').onclick=()=>{ s.favorite=!s.favorite; DB.put('songs',s); renderSongHeader(); renderSongList(); };
   if($('#btnEditSong')) $('#btnEditSong').onclick=()=> openEditor(s);
@@ -1297,6 +1303,7 @@ function renderSongHeader(){
   $('#bpmPlus').onclick=()=>{ s.bpm=clamp(s.bpm+1,40,240); DB.put('songs',s); renderSongHeader(); renderTransport(); };
   $('#capoSelect').onchange=e=>{ s.capo=parseInt(e.target.value); DB.put('songs',s); renderSongHeader(); };
   $('#rhythmSelect').onchange=e=>{ s.rhythmId=e.target.value; DB.put('songs',s); renderTransport(); };
+  $('#chordDurSelect').onchange=e=>{ s.chordDuration=parseInt(e.target.value); DB.put('songs',s); buildTimeline(); toast('Akor süresi kaydedildi'); };
   $('#transDown').onclick=()=>{ State.transpose=clamp(State.transpose-1,-11,11); renderSongHeader(); renderLyrics(); buildTimeline(); };
   $('#transUp').onclick=()=>{ State.transpose=clamp(State.transpose+1,-11,11); renderSongHeader(); renderLyrics(); buildTimeline(); };
 }
