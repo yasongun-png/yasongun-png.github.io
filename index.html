@@ -132,12 +132,21 @@ a{color:var(--accent);}
 .pill select{background:none; border:none; color:var(--text); font-size:.8rem;}
 
 /* ---------- Lyrics area ---------- */
-#lyricsWrap{flex:1; overflow-y:auto; padding:20px 24px 120px; scroll-behavior:smooth;}
+/* No CSS scroll-behavior:smooth here: the auto-scroll during playback (autoScrollStep) already
+   eases toward its target every frame in JS, and combining that with the browser's own smooth-
+   scroll animation on top of it re-triggers a new competing animation on every tiny increment,
+   which is what caused the visible jitter/tremor while scrolling. The couple of explicit
+   scrollIntoView() calls elsewhere pass behavior:'smooth' directly, which works regardless of
+   this CSS property. */
+#lyricsWrap{flex:1; overflow-y:auto; padding:20px 24px 120px;}
 .section-block{margin-bottom:22px;}
 .section-title{
   font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; color:var(--accent);
   font-weight:700; margin-bottom:6px; border-left:3px solid var(--accent); padding-left:8px;
+  display:flex; align-items:center; gap:6px;
 }
+.section-title .repeat-badge{background:var(--accent); color:#fff; border-radius:99px; padding:1px 8px; font-size:.68rem;}
+.section-title .repeat-edit{min-width:24px; min-height:24px; padding:2px; font-size:.75rem;}
 .lyric-line{
   display:block; line-height:1.5; font-size:var(--font-lyrics); margin-bottom:2px;
 }
@@ -816,6 +825,7 @@ function extractAllChords(sections){
 function transposeSections(sections, semitones, useFlats){
   return sections.map(sec=>({
     name:sec.name,
+    repeat:sec.repeat,
     lines: sec.lines.map(line=>({
       raw: line.raw,
       units: line.units.map(u=> ({chord: u.chord? transposeChordName(u.chord, semitones, useFlats): u.chord, text:u.text}))
@@ -1227,6 +1237,20 @@ async function refreshFromPublished(){
   renderSongList();
   toast(added ? `${added} yeni şarkı eklendi` : 'Zaten güncel');
 }
+/* Keep the phone screen from sleeping while playing — hands are on the guitar, not the screen. */
+const ScreenWake = (()=>{
+  let lock = null;
+  async function request(){
+    if(lock || !('wakeLock' in navigator)) return;
+    try{ lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', ()=>{ lock=null; }); }
+    catch(e){ lock = null; }
+  }
+  function release(){ if(lock){ lock.release().catch(()=>{}); lock=null; } }
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState==='visible' && State.player.playing) request();
+  });
+  return {request, release};
+})();
 function saveSettings(){ DB.put('meta',{key:'settings', value:State.settings}); }
 function pushRecent(id){
   State.recentIds = [id, ...State.recentIds.filter(x=>x!==id)].slice(0,15);
@@ -1334,6 +1358,7 @@ function openSong(id){
   closeBeatPopover();
   State.currentSong = s;
   State.transpose = 0;
+  State.player.autoScrollSpeed = s.scrollSpeed ?? 100;
   pushRecent(id);
   renderSongList();
   showView('song');
@@ -1433,10 +1458,15 @@ function renderLyrics(){
       }).join('');
       return `<div class="lyric-line">${clus}</div>`;
     }).join('');
-    return `<div class="section-block"><div class="section-title">${escapeHtml(sec.name)}</div>${lines}</div>`;
+    const repeat = sec.repeat||1;
+    const repeatBadge = repeat>1 ? `<span class="repeat-badge">×${repeat}</span>` : '';
+    const repeatBtn = State.isAdmin ? `<button class="btn icon repeat-edit" data-si="${si}" title="Tekrar sayısı">🔁</button>` : '';
+    return `<div class="section-block"><div class="section-title">${escapeHtml(sec.name)}${repeatBadge}${repeatBtn}</div>${lines}</div>`;
   }).join('');
 }
 $('#lyricsWrap').addEventListener('click', e=>{
+  const repeatBtn = e.target.closest('.repeat-edit');
+  if(repeatBtn){ openRepeatPopoverAt(repeatBtn, +repeatBtn.dataset.si); return; }
   const chordTag = e.target.closest('.chordtag');
   if(chordTag){
     showChordDetail(chordTag.dataset.chord);
@@ -1583,10 +1613,10 @@ function renderTransport(){
     <span class="bpmdisplay" id="transBpm">${s.bpm} BPM</span>
     <button class="btn icon" id="btnTap" title="Tap Tempo">👆 Tap</button>
     <label style="display:flex;align-items:center;gap:4px; font-size:.8rem;">🔁 Kaydırma
-      <select id="scrollSpeedSel">
+      <select id="scrollSpeedSel" ${State.isAdmin?'':'disabled title="Bu ayarı sadece admin değiştirebilir"'}>
         <option value="0">Manuel</option>
         <option value="50">%50</option><option value="75">%75</option>
-        <option value="100" selected>%100</option><option value="125">%125</option><option value="150">%150</option>
+        <option value="100">%100</option><option value="125">%125</option><option value="150">%150</option>
       </select>
     </label>
     <label style="display:flex;align-items:center;gap:4px; font-size:.8rem;">🧘 Prova
@@ -1601,7 +1631,12 @@ function renderTransport(){
   $('#btnPrevChord').onclick = ()=> stepChord(-1);
   $('#btnNextChord').onclick = ()=> stepChord(1);
   $('#btnTap').onclick = tapTempo;
-  $('#scrollSpeedSel').onchange = e=> State.player.autoScrollSpeed = parseInt(e.target.value);
+  $('#scrollSpeedSel').value = String(State.player.autoScrollSpeed ?? s.scrollSpeed ?? 100);
+  $('#scrollSpeedSel').onchange = e=>{
+    const v = parseInt(e.target.value);
+    State.player.autoScrollSpeed = v;
+    if(State.isAdmin){ s.scrollSpeed = v; DB.put('songs', s); }
+  };
   $('#rehearsalToggle').onchange = e=> { State.player.mode = e.target.checked?'rehearsal':'normal'; };
   $('#volSlider').oninput = e=>{ State.settings.volume=parseFloat(e.target.value); AudioEngine.setVolume(State.settings.volume); saveSettings(); };
   renderRhythmVisual();
@@ -1626,10 +1661,18 @@ function tapTempo(){
 
 // ---- Timeline generation: distribute chords across time using bpm + chordDuration(beats) ----
 function flattenWordUnits(sections){
+  // A section with a repeat count (e.g. a chorus sung twice) contributes its chord/word
+  // sequence that many times in a row — same words on screen, but the timeline (and so the
+  // audio/rhythm) actually cycles through it repeat-many times.
   const flat = [];
-  sections.forEach((sec,si)=> sec.lines.forEach((line,li)=> line.units.forEach((u,ui)=>{
-    flat.push({sec:si, line:li, u:ui, chord:u.chord});
-  })));
+  sections.forEach((sec,si)=>{
+    const repeat = Math.max(1, sec.repeat||1);
+    for(let pass=0; pass<repeat; pass++){
+      sec.lines.forEach((line,li)=> line.units.forEach((u,ui)=>{
+        flat.push({sec:si, line:li, u:ui, chord:u.chord});
+      }));
+    }
+  });
   return flat;
 }
 // The editor's only job: how many beats hold between this chord and the next one. Each chord
@@ -1698,6 +1741,7 @@ function startPlayback(){
   State.player.startTime = performance.now()/1000 - (State.player.pausedAt||0);
   State.player.autoScrollSpeed = State.player.autoScrollSpeed ?? 100;
   updateHeaderCompact();
+  ScreenWake.request();
   tickPlayback();
 }
 function pausePlayback(){
@@ -1713,6 +1757,7 @@ function stopPlayback(){
   State.player.pausedAt = 0;
   State.player.resumeAfterBeatEdit = false;
   AudioEngine.stopMetronome();
+  ScreenWake.release();
   cancelAnimationFrame(State.player.rafId);
   if($('#btnPlay')) $('#btnPlay').textContent='▶';
   $('#nowPlaying') && $('#nowPlaying').classList.remove('show');
@@ -1781,6 +1826,7 @@ function autoScrollStep(){
   // the part the user needs to see slides off-screen; easing toward the actual target
   // position every frame means it always catches up, just faster or slower per the
   // speed setting, and it never fights with any other scroll call.
+  if(performance.now() < (State.player.userScrollUntil||0)) return;
   const node = State.player.activeNode;
   if(!node) return;
   const wrap = $('#lyricsWrap');
@@ -1811,9 +1857,14 @@ function stepChord(dir){
     showChordDetail(tl[idx].chord);
   }
 }
-$('#lyricsWrap').addEventListener('pointerdown', ()=>{
-  if(State.player.playing && State.player.autoScrollSpeed>0){ State.player.autoScrollSpeed = 0; toast('Otomatik kaydırma durduruldu (manuel)'); }
-});
+// A guitarist's hands are on the guitar, not the phone — auto-scroll during playback must not
+// need to be manually re-enabled after every incidental touch (tapping a word to jump there,
+// bumping the screen). It now only yields *while* a finger is actually down/dragging, resuming
+// by itself right after, instead of a single tap permanently switching it off.
+function suppressAutoScrollBriefly(){ State.player.userScrollUntil = performance.now() + 900; }
+$('#lyricsWrap').addEventListener('pointerdown', suppressAutoScrollBriefly);
+$('#lyricsWrap').addEventListener('pointermove', suppressAutoScrollBriefly);
+$('#lyricsWrap').addEventListener('touchmove', suppressAutoScrollBriefly, {passive:true});
 
 /* =========================================================================
    CHORD GAP EDITOR — a plain list of the song's chords in order, each with
@@ -1870,7 +1921,7 @@ function openBeatPopoverAt(chordTagEl){
 }
 function outsideBeatPopoverClick(e){
   const pop = $('#beatPopover');
-  if(!pop.contains(e.target) && !e.target.closest('.chordtag')){ closeBeatPopover(); }
+  if(!pop.contains(e.target) && !e.target.closest('.chordtag') && !e.target.closest('.repeat-edit')){ closeBeatPopover(); }
 }
 function closeBeatPopover(){
   $('#beatPopover').classList.add('hidden');
@@ -1879,6 +1930,34 @@ function closeBeatPopover(){
     State.player.resumeAfterBeatEdit = false;
     startPlayback();
   }
+}
+function openRepeatPopoverAt(btn, si){
+  const s = State.currentSong;
+  let n = s.sections[si].repeat || 1;
+  const pop = $('#beatPopover');
+  pop.classList.remove('hidden');
+  const rect = btn.getBoundingClientRect();
+  let top = rect.bottom+6, left = rect.left;
+  if(left+180>window.innerWidth) left = window.innerWidth-190;
+  if(top+50>window.innerHeight) top = rect.top-56;
+  pop.style.top = top+'px'; pop.style.left = left+'px';
+  function render(){
+    pop.innerHTML = `<span class="bp-chord">🔁 Tekrar</span>
+      <button class="btn icon bp-minus">–</button>
+      <span class="bp-val">${n}×</span>
+      <button class="btn icon bp-plus">+</button>`;
+    $('.bp-minus',pop).onclick = ()=>{ n = clamp(n-1,1,16); save(); render(); };
+    $('.bp-plus',pop).onclick = ()=>{ n = clamp(n+1,1,16); save(); render(); };
+  }
+  async function save(){
+    s.sections[si].repeat = n;
+    s.updated = Date.now();
+    await DB.put('songs', s);
+    buildTimeline();
+    renderLyrics();
+  }
+  render();
+  setTimeout(()=> document.addEventListener('click', outsideBeatPopoverClick, true), 0);
 }
 function openMeasureEditor(){
   const s = State.currentSong;
