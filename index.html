@@ -101,12 +101,34 @@ a{color:var(--accent);}
 }
 
 /* ---------- Song header ---------- */
-#songHeader{padding:12px 18px; border-bottom:1px solid var(--border); background:var(--bg-elev);}
-#songHeader h1{margin:0; font-size:1.4rem;}
-#songHeader .artist{color:var(--text-dim); font-size:.95rem; margin-top:2px;}
-.infobar{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;}
-.pill{background:var(--bg-elev2); border:1px solid var(--border); border-radius:99px; padding:4px 12px; font-size:.8rem; display:flex; align-items:center; gap:4px;}
+#songHeader{padding:10px 18px; border-bottom:1px solid var(--border); background:var(--bg-elev); flex-shrink:0;}
+#songHeader h1{margin:0; font-size:1.4rem; transition:font-size .2s;}
+#songHeader .artist{color:var(--text-dim); font-size:.95rem; margin-top:2px; transition:max-height .2s, opacity .2s;}
+.infobar{display:flex; flex-wrap:nowrap; gap:6px; margin-top:8px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding-bottom:2px; transition:max-height .2s, opacity .2s, margin .2s;}
+.infobar::-webkit-scrollbar{display:none;}
+.pill{background:var(--bg-elev2); border:1px solid var(--border); border-radius:99px; padding:4px 12px; font-size:.8rem; display:flex; align-items:center; gap:4px; flex-shrink:0; white-space:nowrap;}
 .pill button{background:none;border:none;color:var(--text); font-size:.9rem; padding:0 2px;}
+/* Collapsed while playing: the now-playing strip already surfaces the chord/flow info that
+   matters mid-performance, so the static header (title, editing buttons, every info pill)
+   shrinks to near-nothing to give the lyrics the vertical space they actually need. */
+#songHeader.compact{padding-top:6px; padding-bottom:6px;}
+#songHeader.compact h1{font-size:1rem;}
+#songHeader.compact .artist{max-height:0; opacity:0; margin:0; overflow:hidden;}
+#songHeader.compact .editbtns{display:none;}
+#songHeader.compact .infobar{max-height:0; opacity:0; margin:0; overflow:hidden; padding:0;}
+#btnCollapseHeader{font-size:.75rem;}
+@media (max-width:900px){
+  #songHeader{padding:8px 14px;}
+  #songHeader h1{font-size:1.15rem;}
+  .pill{padding:3px 9px; font-size:.74rem;}
+  #nowPlaying{padding:6px 12px; gap:8px;}
+  .chordflow{gap:8px;}
+  .chordflow .cf-box.now{transform:scale(1.15);}
+  .chordflow .cf-box .cname{font-size:1.15rem;}
+  .chordflow .cf-box .lbl{font-size:.55rem;}
+  .chordflow .arrow{font-size:1rem;}
+  #timelineWrap{display:none;} /* tiny, illegible segments on a phone; chordflow above already shows what matters */
+}
 .pill select{background:none; border:none; color:var(--text); font-size:.8rem;}
 
 /* ---------- Lyrics area ---------- */
@@ -1087,6 +1109,7 @@ const State = {
   transpose:0, // current display transpose (semitones), not saved to song
   selectedChord:null,
   isAdmin:false,
+  headerCollapsed:false,
   player:{ playing:false, timeline:[], startTime:0, pausedAt:0, activeIdx:-1, rafId:null, autoScroll:false, mode:'normal' /* or rehearsal */ },
 };
 
@@ -1281,9 +1304,12 @@ function renderSongHeader(){
   const capoNote = s.capo>0 ? noteName(noteIndex((s.key.replace(/m$/,''))) + s.capo) + (s.key.endsWith('m')?'m':'') : null;
   el.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
-      <div>
-        <h1>${escapeHtml(s.title)}</h1>
-        <div class="artist">${escapeHtml(s.artist||'')}${s.album?' · '+escapeHtml(s.album):''}</div>
+      <div style="display:flex; align-items:flex-start; gap:6px; min-width:0;">
+        <button class="btn icon" id="btnCollapseHeader" title="Bilgi panelini gizle/göster">${State.headerCollapsed?'▾':'▴'}</button>
+        <div style="min-width:0;">
+          <h1>${escapeHtml(s.title)}</h1>
+          <div class="artist">${escapeHtml(s.artist||'')}${s.album?' · '+escapeHtml(s.album):''}</div>
+        </div>
       </div>
       <div class="editbtns" style="display:flex; gap:6px; flex-wrap:wrap;">
         <button class="btn icon" id="btnFavToggle" title="Favori">${s.favorite?'★':'☆'}</button>
@@ -1323,6 +1349,13 @@ function renderSongHeader(){
   $('#chordDurSelect').onchange=e=>{ s.chordDuration=parseInt(e.target.value); DB.put('songs',s); buildTimeline(); toast('Akor süresi kaydedildi'); };
   $('#transDown').onclick=()=>{ State.transpose=clamp(State.transpose-1,-11,11); renderSongHeader(); renderLyrics(); buildTimeline(); };
   $('#transUp').onclick=()=>{ State.transpose=clamp(State.transpose+1,-11,11); renderSongHeader(); renderLyrics(); buildTimeline(); };
+  $('#btnCollapseHeader').onclick=()=>{ State.headerCollapsed = !State.headerCollapsed; updateHeaderCompact(); $('#btnCollapseHeader').textContent = State.headerCollapsed?'▾':'▴'; };
+  updateHeaderCompact();
+}
+function updateHeaderCompact(){
+  const el = $('#songHeader');
+  if(!el) return;
+  el.classList.toggle('compact', State.headerCollapsed || State.player.playing);
 }
 function renderLyrics(){
   const s = State.currentSong;
@@ -1572,6 +1605,7 @@ function startPlayback(){
   $('#btnPlay').textContent = '⏸';
   State.player.startTime = performance.now()/1000 - (State.player.pausedAt||0);
   State.player.autoScrollSpeed = State.player.autoScrollSpeed ?? 100;
+  updateHeaderCompact();
   tickPlayback();
 }
 function pausePlayback(){
@@ -1580,6 +1614,7 @@ function pausePlayback(){
   AudioEngine.stopMetronome();
   $('#btnPlay').textContent = '▶';
   cancelAnimationFrame(State.player.rafId);
+  updateHeaderCompact();
 }
 function stopPlayback(){
   State.player.playing = false;
@@ -1588,6 +1623,7 @@ function stopPlayback(){
   cancelAnimationFrame(State.player.rafId);
   if($('#btnPlay')) $('#btnPlay').textContent='▶';
   $('#nowPlaying') && $('#nowPlaying').classList.remove('show');
+  updateHeaderCompact();
   highlightChordAt(-1);
   if(State.player.timeline) renderChordFlow(-1);
 }
