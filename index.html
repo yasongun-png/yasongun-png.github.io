@@ -139,7 +139,7 @@ a{color:var(--accent);}
   font-weight:700; margin-bottom:6px; border-left:3px solid var(--accent); padding-left:8px;
 }
 .lyric-line{
-  display:block; line-height:1.5; font-size:var(--font-lyrics); margin-bottom:0; padding-top:1.9em;
+  display:block; line-height:1.5; font-size:var(--font-lyrics); margin-bottom:0; padding-top:2.3em;
 }
 .clu{position:relative; display:inline-block; vertical-align:bottom; margin-right:2px; white-space:normal;}
 .clu .lyricword{white-space:pre-wrap;}
@@ -153,7 +153,12 @@ a{color:var(--accent);}
 .clu .lyricword.clickable{cursor:pointer; border-bottom:1px dashed transparent;}
 .clu .lyricword.clickable:hover{border-bottom:1px dashed var(--accent);}
 .clu.playing-chord{z-index:3;}
-.clu.playing-chord .chordtag{background:var(--active); color:#fff; border-color:var(--active); font-size:1.3em; padding:3px 9px; transform:translateY(-2px); box-shadow:0 3px 8px rgba(0,0,0,.25);}
+/* Scale from the bottom-left corner (not font-size/padding) so the enlarged badge grows
+   upward into the empty space above it instead of downward into the lyric word underneath. */
+.clu.playing-chord .chordtag{
+  background:var(--active); color:#fff; border-color:var(--active);
+  transform:scale(1.3); transform-origin:bottom left; box-shadow:0 3px 8px rgba(0,0,0,.25);
+}
 .clu.playing-chord .lyricword{font-weight:800; text-decoration:underline; text-decoration-color:var(--active); text-decoration-thickness:3px; text-underline-offset:4px;}
 .clu.upcoming-chord .chordtag{background:var(--upcoming); color:#000; border-color:var(--upcoming);}
 .emptyline{height:1.2em;}
