@@ -233,6 +233,14 @@ a{color:var(--accent);}
 #chordPicker .cp-item:hover{background:var(--bg-elev2);}
 #chordPicker .cp-remove{color:var(--danger); border-top:1px solid var(--border); margin-top:4px; padding-top:8px;}
 
+#beatPopover{
+  position:fixed; z-index:300; background:var(--bg-elev); border:1px solid var(--border); border-radius:10px;
+  box-shadow:var(--shadow); padding:8px 10px; display:flex; align-items:center; gap:8px;
+}
+#beatPopover .bp-chord{color:var(--chord); font-weight:800;}
+#beatPopover button{min-width:32px; min-height:32px; padding:4px;}
+#beatPopover .bp-val{min-width:52px; text-align:center; font-weight:700;}
+
 /* editor */
 #editorLyricArea{border:1px solid var(--border); border-radius:8px; padding:14px; min-height:200px; background:var(--bg-elev2); line-height:2.4em;}
 #editorAdvancedText{width:100%; min-height:260px; font-family:monospace; font-size:.9rem;}
@@ -360,6 +368,7 @@ body.performance #songHeader h1{font-size:2rem;}
 <div id="toast"></div>
 <div id="modalRoot"></div>
 <div id="chordPicker" class="hidden"></div>
+<div id="beatPopover" class="hidden"></div>
 
 <script>
 "use strict";
@@ -1306,6 +1315,7 @@ function openSong(id){
   const s = State.songs.find(x=>x.id===id);
   if(!s) return;
   stopPlayback();
+  closeBeatPopover();
   State.currentSong = s;
   State.transpose = 0;
   pushRecent(id);
@@ -1412,7 +1422,11 @@ function renderLyrics(){
 }
 $('#lyricsWrap').addEventListener('click', e=>{
   const chordTag = e.target.closest('.chordtag');
-  if(chordTag){ showChordDetail(chordTag.dataset.chord); return; }
+  if(chordTag){
+    showChordDetail(chordTag.dataset.chord);
+    if(State.isAdmin && !State.player.playing) openBeatPopoverAt(chordTag);
+    return;
+  }
   const word = e.target.closest('.lyricword');
   if(word && !State.player.playing){
     if(!State.isAdmin){ toast('Söz/akor düzenlemek için admin girişi gerekiyor (Ayarlar)'); return; }
@@ -1763,13 +1777,66 @@ $('#lyricsWrap').addEventListener('pointerdown', ()=>{
 });
 
 /* =========================================================================
-   MEASURE EDITOR — mark, directly on the actual lyrics, which word each
-   measure ends on. Chords have no length of their own; a measure does
-   (fixed by the time signature), and a chord's timing falls wherever its
-   word sits inside that measure. Tap a word to place/remove the barline
-   right after it — the equivalent of dragging a barline on a music staff,
-   but tap-based so it works reliably on a phone with wrapping text.
+   CHORD GAP EDITOR — a plain list of the song's chords in order, each with
+   a +/- stepper that sets only the gap (in beats) to the next chord.
    ========================================================================= */
+function chordOccurrenceIndex(sections, sec, line, u){
+  let idx = 0;
+  for(const fu of flattenWordUnits(sections)){
+    if(fu.chord){
+      if(fu.sec===sec && fu.line===line && fu.u===u) return idx;
+      idx++;
+    }
+  }
+  return -1;
+}
+function openBeatPopoverAt(chordTagEl){
+  const clu = chordTagEl.closest('.clu');
+  if(!clu) return;
+  const sec=+clu.dataset.sec, line=+clu.dataset.line, u=+clu.dataset.u;
+  const s = State.currentSong;
+  const sections = effectiveSections();
+  const idx = chordOccurrenceIndex(sections, sec, line, u);
+  if(idx<0) return;
+  const gaps = (s.chordGaps||[]).slice();
+  let beats = gaps[idx]!=null ? gaps[idx] : (s.chordDuration||2);
+  const pop = $('#beatPopover');
+  pop.classList.remove('hidden');
+  const rect = chordTagEl.getBoundingClientRect();
+  let top = rect.bottom+6, left = rect.left;
+  if(left+180>window.innerWidth) left = window.innerWidth-190;
+  if(top+50>window.innerHeight) top = rect.top-56;
+  pop.style.top = top+'px'; pop.style.left = left+'px';
+  function render(){
+    pop.innerHTML = `<span class="bp-chord">${escapeHtml(chordTagEl.dataset.chord)}</span>
+      <button class="btn icon bp-minus">–</button>
+      <span class="bp-val">${beats}v</span>
+      <button class="btn icon bp-plus">+</button>`;
+    $('.bp-minus',pop).onclick = ()=>{ beats = clamp(beats-0.25,0.25,32); save(); render(); };
+    $('.bp-plus',pop).onclick = ()=>{ beats = clamp(beats+0.25,0.25,32); save(); render(); };
+  }
+  async function save(){
+    gaps[idx] = beats;
+    s.chordGaps = gaps;
+    s.updated = Date.now();
+    await DB.put('songs', s);
+    buildTimeline();
+  }
+  render();
+  // Capture phase, not bubble: the +/- buttons re-render (replace) themselves on click, so by
+  // the time a bubble-phase document listener saw the click, the clicked button node would
+  // already be detached and read as "outside" the popover, closing it on every tap. Capture
+  // fires before that re-render happens.
+  setTimeout(()=> document.addEventListener('click', outsideBeatPopoverClick, true), 0);
+}
+function outsideBeatPopoverClick(e){
+  const pop = $('#beatPopover');
+  if(!pop.contains(e.target) && !e.target.closest('.chordtag')){ closeBeatPopover(); }
+}
+function closeBeatPopover(){
+  $('#beatPopover').classList.add('hidden');
+  document.removeEventListener('click', outsideBeatPopoverClick, true);
+}
 function openMeasureEditor(){
   const s = State.currentSong;
   buildTimeline();
