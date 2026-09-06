@@ -1,0 +1,1954 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>ChordStage — Şarkı Sözü &amp; Akor &amp; Ritim Uygulaması</title>
+<meta name="description" content="Offline çalışan gitar odaklı şarkı sözü, akor, ritim ve performans uygulaması">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎸</text></svg>">
+<style>
+:root{
+  --bg:#f4f5f7; --bg-elev:#ffffff; --bg-elev2:#eef0f3; --border:#dcdfe4;
+  --text:#1b1e24; --text-dim:#6b7280; --accent:#3563e9; --accent-2:#1e40af;
+  --chord:#c2410c; --chord-bg:#fff2e8;
+  --active:#16a34a; --upcoming:#eab308; --next:#2563eb; --past:#9ca3af;
+  --danger:#dc2626; --radius:10px; --shadow:0 2px 10px rgba(0,0,0,.08);
+  --font-lyrics:1.15rem; --font-chord:1rem;
+}
+[data-theme="dark"]{
+  --bg:#12141a; --bg-elev:#1b1e26; --bg-elev2:#232733; --border:#323846;
+  --text:#eef0f4; --text-dim:#98a1b3; --accent:#5c8bff; --accent-2:#3563e9;
+  --chord:#ff9a52; --chord-bg:#3a2416;
+}
+[data-theme="stage"]{
+  --bg:#000000; --bg-elev:#0a0a0a; --bg-elev2:#161616; --border:#333;
+  --text:#ffffff; --text-dim:#c9c9c9; --accent:#ffd400; --accent-2:#ffae00;
+  --chord:#ffd400; --chord-bg:#1c1600;
+  --active:#39ff6a; --upcoming:#ffd400; --next:#5cc8ff; --past:#666;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex; flex-direction:column; height:100vh; overflow:hidden;
+}
+button{font-family:inherit; cursor:pointer;}
+input,select,textarea{font-family:inherit;}
+.btn{
+  background:var(--bg-elev2); color:var(--text); border:1px solid var(--border);
+  border-radius:8px; padding:8px 14px; font-size:.9rem; min-height:38px;
+}
+.btn:hover{filter:brightness(1.08);}
+.btn.primary{background:var(--accent); color:#fff; border-color:var(--accent);}
+.btn.danger{background:var(--danger); color:#fff; border-color:var(--danger);}
+.btn.icon{padding:8px; min-width:38px;}
+.btn:disabled{opacity:.4; cursor:not-allowed;}
+.hidden{display:none !important;}
+input[type=text],input[type=number],input[type=search],textarea,select{
+  background:var(--bg-elev); color:var(--text); border:1px solid var(--border);
+  border-radius:8px; padding:8px 10px; font-size:.9rem;
+}
+a{color:var(--accent);}
+
+/* ---------- Top bar ---------- */
+#topbar{
+  display:flex; align-items:center; gap:8px; padding:8px 12px;
+  background:var(--bg-elev); border-bottom:1px solid var(--border); flex-shrink:0; z-index:50;
+}
+#topbar .logo{font-weight:800; font-size:1.05rem; display:flex; align-items:center; gap:6px;}
+#topbar .spacer{flex:1;}
+#menuToggle{display:none;}
+.navbtn{background:transparent;border:none;color:var(--text);padding:8px 10px;border-radius:8px;font-size:.85rem;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:56px;}
+.navbtn.active{background:var(--bg-elev2); color:var(--accent);}
+.navbtn span.ic{font-size:1.15rem;}
+
+/* ---------- Layout ---------- */
+#appwrap{flex:1; display:flex; min-height:0;}
+#sidebar{
+  width:280px; flex-shrink:0; background:var(--bg-elev); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+#sidebar .sbhead{padding:10px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:8px;}
+#sidebar .tabs{display:flex; gap:4px; padding:8px 10px 0; flex-wrap:wrap;}
+#sidebar .tabs button{flex:1; min-width:70px; font-size:.75rem; padding:6px 4px;}
+#songList{flex:1; overflow-y:auto; padding:6px;}
+.songitem{
+  padding:8px 10px; border-radius:8px; cursor:pointer; margin-bottom:3px;
+  display:flex; justify-content:space-between; align-items:center; gap:6px;
+}
+.songitem:hover{background:var(--bg-elev2);}
+.songitem.selected{background:var(--accent); color:#fff;}
+.songitem .meta{font-size:.72rem; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.songitem.selected .meta{color:#e5e9ff;}
+.songitem .title{font-weight:600; font-size:.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.songitem .fav{background:none;border:none;font-size:1rem;color:var(--text-dim);flex-shrink:0;}
+.songitem.selected .fav{color:#fff;}
+.taglist{display:flex; flex-wrap:wrap; gap:4px; padding:6px 10px;}
+.tagchip{font-size:.7rem; padding:3px 8px; border-radius:99px; background:var(--bg-elev2); border:1px solid var(--border); cursor:pointer;}
+.tagchip.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+
+#main{flex:1; display:flex; min-width:0; overflow:hidden;}
+#center{flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden;}
+#rightpanel{
+  width:280px; flex-shrink:0; background:var(--bg-elev); border-left:1px solid var(--border);
+  overflow-y:auto; padding:12px;
+}
+
+/* ---------- Song header ---------- */
+#songHeader{padding:12px 18px; border-bottom:1px solid var(--border); background:var(--bg-elev);}
+#songHeader h1{margin:0; font-size:1.4rem;}
+#songHeader .artist{color:var(--text-dim); font-size:.95rem; margin-top:2px;}
+.infobar{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;}
+.pill{background:var(--bg-elev2); border:1px solid var(--border); border-radius:99px; padding:4px 12px; font-size:.8rem; display:flex; align-items:center; gap:4px;}
+.pill button{background:none;border:none;color:var(--text); font-size:.9rem; padding:0 2px;}
+.pill select{background:none; border:none; color:var(--text); font-size:.8rem;}
+
+/* ---------- Lyrics area ---------- */
+#lyricsWrap{flex:1; overflow-y:auto; padding:20px 24px 120px; scroll-behavior:smooth;}
+.section-block{margin-bottom:22px;}
+.section-title{
+  font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; color:var(--accent);
+  font-weight:700; margin-bottom:6px; border-left:3px solid var(--accent); padding-left:8px;
+}
+.lyric-line{
+  display:flex; flex-wrap:wrap; align-items:flex-end; line-height:2.6em;
+  font-size:var(--font-lyrics); margin-bottom:2px; min-height:2.6em;
+}
+.clu{position:relative; display:inline-block; padding-top:1.3em; margin-right:2px; white-space:pre-wrap;}
+.clu .chordtag{
+  position:absolute; top:0; left:0; color:var(--chord); font-weight:700; font-size:var(--font-chord);
+  cursor:pointer; user-select:none; padding:1px 3px; border-radius:4px; white-space:nowrap;
+}
+.clu .chordtag:hover{background:var(--chord-bg);}
+.clu .lyricword{cursor:text;}
+.clu .lyricword.clickable{cursor:pointer; border-bottom:1px dashed transparent;}
+.clu .lyricword.clickable:hover{border-bottom:1px dashed var(--accent);}
+.clu.playing-chord .chordtag{background:var(--active); color:#fff; font-size:1.15em; padding:2px 6px;}
+.clu.upcoming-chord .chordtag{background:var(--upcoming); color:#000;}
+.emptyline{height:1.2em;}
+
+/* ---------- Now playing strip ---------- */
+#nowPlaying{
+  display:none; padding:10px 18px; background:var(--bg-elev2); border-bottom:1px solid var(--border);
+  align-items:center; gap:18px; flex-wrap:wrap;
+}
+#nowPlaying.show{display:flex;}
+.chordflow{display:flex; align-items:center; gap:14px;}
+.chordflow .cf-box{text-align:center; opacity:.55; transition:all .25s;}
+.chordflow .cf-box.now{opacity:1; transform:scale(1.35); font-weight:800;}
+.chordflow .cf-box .lbl{font-size:.62rem; text-transform:uppercase; color:var(--text-dim); letter-spacing:.05em;}
+.chordflow .cf-box .cname{font-size:1.6rem; font-weight:800; color:var(--active);}
+.chordflow .cf-box.next .cname{color:var(--next);}
+.chordflow .cf-box.prev .cname{color:var(--past);}
+.chordflow .arrow{color:var(--text-dim); font-size:1.3rem;}
+#timelineWrap{flex:1; min-width:200px;}
+#timelineBar{position:relative; height:34px; background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; overflow:hidden;}
+.tl-seg{position:absolute; top:0; bottom:0; border-right:1px solid var(--border); font-size:.65rem; display:flex; align-items:center; justify-content:center; color:var(--text-dim); cursor:pointer; overflow:hidden;}
+.tl-seg:hover{background:var(--bg-elev2);}
+.tl-seg.active{background:var(--active); color:#fff; font-weight:700;}
+#tlCursor{position:absolute; top:0; bottom:0; width:2px; background:var(--danger); pointer-events:none;}
+
+/* ---------- Transport ---------- */
+#transport{
+  display:flex; align-items:center; gap:10px; padding:10px 18px; background:var(--bg-elev);
+  border-top:1px solid var(--border); flex-wrap:wrap;
+}
+#transport .grow{flex:1;}
+.bpmdisplay{font-variant-numeric:tabular-nums; font-weight:700; min-width:70px; text-align:center;}
+#beatDots{display:flex; gap:5px;}
+.beatdot{width:12px; height:12px; border-radius:50%; background:var(--bg-elev2); border:1px solid var(--border);}
+.beatdot.on{background:var(--accent);}
+.beatdot.on.first{background:var(--danger);}
+
+/* ---------- Right panel: chord detail ---------- */
+.chordDetailTitle{font-size:1.4rem; font-weight:800; text-align:center; margin-bottom:6px;}
+#chordSvgHolder{display:flex; justify-content:center; margin-bottom:8px;}
+.altRow{display:flex; gap:8px; overflow-x:auto; padding:4px 0;}
+.altRow .altchip{flex-shrink:0; text-align:center; cursor:pointer; padding:4px; border-radius:8px; border:1px solid transparent;}
+.altRow .altchip:hover{border-color:var(--accent);}
+.stringinfo{font-size:.75rem; font-family:monospace; background:var(--bg-elev2); padding:8px; border-radius:8px; margin-top:6px; white-space:pre;}
+
+/* ---------- Modal ---------- */
+.modal-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center;
+  z-index:200; padding:16px;
+}
+.modal{
+  background:var(--bg-elev); border-radius:12px; max-width:640px; width:100%; max-height:90vh; overflow-y:auto;
+  padding:20px; box-shadow:var(--shadow);
+}
+.modal h2{margin-top:0;}
+.formrow{display:flex; flex-direction:column; gap:4px; margin-bottom:12px;}
+.formrow label{font-size:.78rem; color:var(--text-dim); font-weight:600;}
+.formgrid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:16px;}
+
+/* chord picker popover */
+#chordPicker{
+  position:fixed; z-index:300; background:var(--bg-elev); border:1px solid var(--border); border-radius:10px;
+  box-shadow:var(--shadow); padding:8px; width:260px; max-height:340px; overflow-y:auto;
+}
+#chordPicker input{width:100%; margin-bottom:6px;}
+#chordPicker .cp-item{padding:6px 8px; border-radius:6px; cursor:pointer; font-size:.88rem;}
+#chordPicker .cp-item:hover{background:var(--bg-elev2);}
+#chordPicker .cp-remove{color:var(--danger); border-top:1px solid var(--border); margin-top:4px; padding-top:8px;}
+
+/* editor */
+#editorLyricArea{border:1px solid var(--border); border-radius:8px; padding:14px; min-height:200px; background:var(--bg-elev2); line-height:2.4em;}
+#editorAdvancedText{width:100%; min-height:260px; font-family:monospace; font-size:.9rem;}
+.editor-toggle{display:flex; gap:6px; margin-bottom:10px;}
+
+/* performance mode */
+body.performance #topbar,body.performance #sidebar,body.performance #rightpanel,body.performance #songHeader .infobar .editbtns{display:none !important;}
+body.performance #main{width:100%;}
+body.performance #lyricsWrap{font-size:1.4em; padding:30px 40px 160px;}
+body.performance{background:#000;}
+body.performance:not([data-theme]) , body.performance{}
+body.performance #songHeader h1{font-size:2rem;}
+
+/* rhythm strip visual */
+.rhythm-visual{display:flex; gap:6px; font-size:1.3rem; justify-content:center; padding:6px;}
+.rhythm-visual span.beatActive{color:var(--accent); font-weight:900; transform:scale(1.3); display:inline-block;}
+
+/* setlist */
+.setlistItem{display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--border); border-radius:8px; margin-bottom:6px; background:var(--bg-elev2); cursor:grab;}
+.setlistItem .num{font-weight:800; color:var(--text-dim); width:20px;}
+
+/* toast */
+#toast{position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#111; color:#fff; padding:10px 18px; border-radius:8px; font-size:.85rem; z-index:500; opacity:0; transition:opacity .3s; pointer-events:none;}
+#toast.show{opacity:1;}
+
+/* responsive */
+@media (max-width:900px){
+  #sidebar{position:fixed; top:56px; bottom:0; left:0; width:82%; max-width:320px; transform:translateX(-100%); transition:transform .25s; z-index:100;}
+  #sidebar.open{transform:translateX(0);}
+  #rightpanel{position:fixed; top:56px; bottom:0; right:0; width:82%; max-width:320px; transform:translateX(100%); transition:transform .25s; z-index:100;}
+  #rightpanel.open{transform:translateX(0);}
+  #menuToggle{display:flex;}
+  .navbtn span.label{display:none;}
+  #sidebarScrim,#rightScrim{display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:90;}
+  #sidebarScrim.show,#rightScrim.show{display:block;}
+}
+@media (max-width:600px){
+  .formgrid{grid-template-columns:1fr;}
+  #transport{gap:6px;}
+}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <button class="btn icon" id="menuToggle" title="Menü">☰</button>
+  <div class="logo">🎸 ChordStage</div>
+  <button class="navbtn active" data-view="library"><span class="ic">🏠</span><span class="label">Ana Sayfa</span></button>
+  <button class="navbtn" data-view="chordlib"><span class="ic">🎼</span><span class="label">Akorlar</span></button>
+  <button class="navbtn" data-view="rhythmlib"><span class="ic">🥁</span><span class="label">Ritimler</span></button>
+  <button class="navbtn" data-view="setlists"><span class="ic">📋</span><span class="label">Setlist</span></button>
+  <div class="spacer"></div>
+  <button class="btn icon" id="btnNewSong" title="Yeni Şarkı">➕</button>
+  <button class="btn icon" id="btnPerformance" title="Performans Modu">🎤</button>
+  <button class="btn icon" id="btnSettings" title="Ayarlar">⚙️</button>
+</div>
+
+<div id="sidebarScrim"></div>
+<div id="rightScrim"></div>
+
+<div id="appwrap">
+  <div id="sidebar">
+    <div class="sbhead">
+      <input type="search" id="searchBox" placeholder="Şarkı, sanatçı, ton, etiket ara...">
+      <div style="display:flex; gap:6px;">
+        <button class="btn" id="filterFav" style="flex:1;">⭐ Favoriler</button>
+        <button class="btn" id="filterRecent" style="flex:1;">🕒 Son</button>
+      </div>
+    </div>
+    <div class="taglist" id="categoryTags"></div>
+    <div id="songList"></div>
+  </div>
+
+  <div id="main">
+    <div id="center">
+      <div id="viewLibraryEmpty" style="flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; color:var(--text-dim);">
+        <div style="font-size:3rem;">🎵</div>
+        <div>Başlamak için soldan bir şarkı seç ya da yeni şarkı oluştur.</div>
+      </div>
+
+      <div id="viewSong" class="hidden" style="display:flex; flex-direction:column; flex:1; min-height:0;">
+        <div id="songHeader"></div>
+        <div id="nowPlaying">
+          <div class="chordflow" id="chordFlow"></div>
+          <div id="timelineWrap"><div id="timelineBar"><div id="tlCursor"></div></div></div>
+        </div>
+        <div id="lyricsWrap"></div>
+        <div id="transport"></div>
+      </div>
+
+      <div id="viewChordLib" class="hidden" style="flex:1; overflow-y:auto; padding:16px;">
+        <h2>Akor Kütüphanesi</h2>
+        <input type="search" id="chordLibSearch" placeholder="Akor ara (örn: Am7)" style="width:260px; margin-bottom:12px;">
+        <div id="chordLibGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:14px;"></div>
+      </div>
+
+      <div id="viewRhythmLib" class="hidden" style="flex:1; overflow-y:auto; padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2>Ritim Kütüphanesi</h2>
+          <button class="btn primary" id="btnNewRhythm">➕ Yeni Ritim</button>
+        </div>
+        <div id="rhythmGrid" style="display:flex; flex-direction:column; gap:10px;"></div>
+      </div>
+
+      <div id="viewSetlists" class="hidden" style="flex:1; overflow-y:auto; padding:16px; display:flex; gap:20px;">
+        <div style="width:260px; flex-shrink:0;">
+          <button class="btn primary" id="btnNewSetlist" style="width:100%; margin-bottom:10px;">➕ Yeni Setlist</button>
+          <div id="setlistNames"></div>
+        </div>
+        <div id="setlistDetail" style="flex:1;"></div>
+      </div>
+    </div>
+
+    <div id="rightpanel">
+      <div id="chordDetailEmpty" style="color:var(--text-dim); text-align:center; padding-top:40px;">Bir akora tıklayın</div>
+      <div id="chordDetail" class="hidden"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="modalRoot"></div>
+<div id="chordPicker" class="hidden"></div>
+
+<script>
+"use strict";
+/* =========================================================================
+   UTILITIES
+   ========================================================================= */
+const $ = (sel,root)=> (root||document).querySelector(sel);
+const $$ = (sel,root)=> Array.from((root||document).querySelectorAll(sel));
+function uid(){ return 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9); }
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+function toast(msg, isError){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.style.background = isError ? '#7f1d1d' : '#111';
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=> t.classList.remove('show'), 2600);
+}
+function fmtTime(s){
+  s = Math.max(0,s|0);
+  return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+}
+
+/* =========================================================================
+   MUSIC THEORY / TRANSPOSE
+   ========================================================================= */
+const NOTE_TO_INDEX = {C:0,'B#':0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,Fb:4,F:5,'E#':5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11,Cb:11};
+const SHARP_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const FLAT_NAMES  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const FLAT_KEYS = new Set(['F','Bb','Eb','Ab','Db','Gb','Cb','Dm','Gm','Cm','Fm','Bbm','Ebm']);
+
+function noteIndex(note){ return NOTE_TO_INDEX[note]; }
+function noteName(idx, useFlats){ idx=((idx%12)+12)%12; return (useFlats?FLAT_NAMES:SHARP_NAMES)[idx]; }
+
+// Parses "Am7", "G/B", "C#maj7" etc into {root, quality, bass}
+const CHORD_RE = /^([A-G](?:#|b)?)([^\/]*)(?:\/([A-G](?:#|b)?))?$/;
+function parseChordName(name){
+  if(!name) return null;
+  const m = CHORD_RE.exec(name.trim());
+  if(!m) return null;
+  return {root:m[1], quality:m[2]||'', bass:m[3]||null};
+}
+function transposeChordName(name, semitones, useFlats){
+  const p = parseChordName(name);
+  if(!p) return name;
+  const ri = noteIndex(p.root);
+  if(ri==null) return name;
+  let out = noteName(ri+semitones, useFlats) + p.quality;
+  if(p.bass){
+    const bi = noteIndex(p.bass);
+    if(bi!=null) out += '/'+noteName(bi+semitones, useFlats);
+  }
+  return out;
+}
+function keyPrefersFlats(key){
+  if(!key) return false;
+  return FLAT_KEYS.has(key.replace(/m$/,'').length && key);
+}
+
+/* =========================================================================
+   CHORD SHAPE LIBRARY (guitar, standard tuning, 6 strings low-E..high-e)
+   ========================================================================= */
+// Hardcoded high quality open/common voicings. frets: -1=mute,0=open. Order: [E A D G B e] (low to high)
+const CHORD_SHAPES = {
+  'C':      {frets:[-1,3,2,0,1,0]},
+  'C7':     {frets:[-1,3,2,3,1,0]},
+  'Cmaj7':  {frets:[-1,3,2,0,0,0]},
+  'Cm':     {frets:[-1,3,5,5,4,3], baseFret:3},
+  'Cm7':    {frets:[-1,3,5,3,4,3], baseFret:3},
+  'Csus2':  {frets:[-1,3,0,0,1,3]},
+  'Csus4':  {frets:[-1,3,3,0,1,1]},
+  'Cadd9':  {frets:[-1,3,2,0,3,0]},
+  'C6':     {frets:[-1,3,2,2,1,0]},
+  'D':      {frets:[-1,-1,0,2,3,2]},
+  'D7':     {frets:[-1,-1,0,2,1,2]},
+  'Dmaj7':  {frets:[-1,-1,0,2,2,2]},
+  'Dm':     {frets:[-1,-1,0,2,3,1]},
+  'Dm7':    {frets:[-1,-1,0,2,1,1]},
+  'Dsus2':  {frets:[-1,-1,0,2,3,0]},
+  'Dsus4':  {frets:[-1,-1,0,2,3,3]},
+  'Dadd9':  {frets:[-1,-1,0,2,3,0]},
+  'D6':     {frets:[-1,-1,0,2,0,2]},
+  'E':      {frets:[0,2,2,1,0,0]},
+  'E7':     {frets:[0,2,0,1,0,0]},
+  'Emaj7':  {frets:[0,2,1,1,0,0]},
+  'Em':     {frets:[0,2,2,0,0,0]},
+  'Em7':    {frets:[0,2,0,0,0,0]},
+  'Esus4':  {frets:[0,2,2,2,0,0]},
+  'Eadd9':  {frets:[0,2,2,1,0,2]},
+  'F':      {frets:[1,3,3,2,1,1], barre:1},
+  'F7':     {frets:[1,3,1,2,1,1], barre:1},
+  'Fmaj7':  {frets:[-1,-1,3,2,1,0]},
+  'Fm':     {frets:[1,3,3,1,1,1], barre:1},
+  'Fm7':    {frets:[1,3,1,1,1,1], barre:1},
+  'Fsus2':  {frets:[-1,-1,3,0,1,1]},
+  'G':      {frets:[3,2,0,0,0,3]},
+  'G7':     {frets:[3,2,0,0,0,1]},
+  'Gmaj7':  {frets:[3,2,0,0,0,2]},
+  'Gm':     {frets:[3,5,5,3,3,3], barre:3, baseFret:3},
+  'Gm7':    {frets:[3,5,3,3,3,3], barre:3, baseFret:3},
+  'Gsus4':  {frets:[3,3,0,0,1,3]},
+  'Gadd9':  {frets:[3,2,0,2,0,3]},
+  'G6':     {frets:[3,2,0,0,0,0]},
+  'A':      {frets:[-1,0,2,2,2,0]},
+  'A7':     {frets:[-1,0,2,0,2,0]},
+  'Amaj7':  {frets:[-1,0,2,1,2,0]},
+  'Am':     {frets:[-1,0,2,2,1,0]},
+  'Am7':    {frets:[-1,0,2,0,1,0]},
+  'Asus2':  {frets:[-1,0,2,2,0,0]},
+  'Asus4':  {frets:[-1,0,2,2,3,0]},
+  'Aadd9':  {frets:[-1,0,2,4,2,0]},
+  'A6':     {frets:[-1,0,2,2,2,2]},
+  'B':      {frets:[-1,2,4,4,4,2], barre:2, baseFret:2},
+  'B7':     {frets:[-1,2,1,2,0,2]},
+  'Bmaj7':  {frets:[-1,2,4,3,4,2], baseFret:2},
+  'Bm':     {frets:[-1,2,4,4,3,2], barre:2, baseFret:2},
+  'Bm7':    {frets:[-1,2,4,2,3,2], baseFret:2},
+  'Bsus4':  {frets:[-1,2,4,4,5,2], baseFret:2},
+};
+// CAGED-style generic templates for computed fallback (root-relative, base index = open root note position)
+const GEN_TEMPLATES = {
+  E:{base:4, tmpl:{maj:[0,2,2,1,0,0], min:[0,2,2,0,0,0], '7':[0,2,0,1,0,0], maj7:[0,2,1,1,0,0], m7:[0,2,0,0,0,0], sus4:[0,2,2,2,0,0], '6':[0,2,2,1,2,0]}},
+  A:{base:9, tmpl:{maj:[-1,0,2,2,2,0], min:[-1,0,2,2,1,0], '7':[-1,0,2,0,2,0], maj7:[-1,0,2,1,2,0], m7:[-1,0,2,0,1,0], sus2:[-1,0,2,2,0,0], sus4:[-1,0,2,2,3,0], '6':[-1,0,2,2,2,2], m6:[-1,0,2,2,1,2], dim:[-1,0,1,2,1,-1], aug:[-1,0,3,2,2,1], add9:[-1,0,2,4,2,0], '9':[-1,0,2,0,2,2]}}
+};
+function normalizeQuality(q){
+  q = (q||'').trim();
+  if(q==='' ) return 'maj';
+  if(/^(m|min)$/.test(q)) return 'min';
+  if(/^(maj7|M7|Δ7?)$/.test(q)) return 'maj7';
+  if(/^(m7|min7)$/.test(q)) return 'm7';
+  if(/^(7)$/.test(q)) return '7';
+  if(/^(sus2)$/.test(q)) return 'sus2';
+  if(/^(sus4|sus)$/.test(q)) return 'sus4';
+  if(/^(dim|°|o)$/.test(q)) return 'dim';
+  if(/^(aug|\+)$/.test(q)) return 'aug';
+  if(/^(6)$/.test(q)) return '6';
+  if(/^(m6|min6)$/.test(q)) return 'm6';
+  if(/^(add9)$/.test(q)) return 'add9';
+  if(/^(9)$/.test(q)) return '9';
+  if(/^(maj9|M9)$/.test(q)) return 'maj7';
+  if(/^(m9|min9)$/.test(q)) return 'm7';
+  if(/^(11)$/.test(q)) return '7';
+  if(/^(13)$/.test(q)) return '7';
+  return 'maj';
+}
+function fingersFromFrets(frets){
+  const fretted = frets.filter(f=>f>0);
+  if(!fretted.length) return frets.map(()=>0);
+  const uniq = [...new Set(fretted)].sort((a,b)=>a-b);
+  return frets.map(f=> f>0 ? uniq.indexOf(f)+1 : 0);
+}
+// returns {frets:[6], fingers:[6], baseFret, barre, computed:bool}
+function getChordShape(name){
+  if(!name) return null;
+  if(CHORD_SHAPES[name]){
+    const s = CHORD_SHAPES[name];
+    return {frets:s.frets.slice(), fingers: s.fingers || fingersFromFrets(s.frets), baseFret: s.baseFret||1, barre:s.barre||null, computed:false};
+  }
+  const parsed = parseChordName(name);
+  if(!parsed) return null;
+  const root = noteIndex(parsed.root);
+  if(root==null) return null;
+  const qual = normalizeQuality(parsed.quality);
+  // choose E or A shape template, prefer smaller shift
+  const shiftE = ((root - GEN_TEMPLATES.E.base)%12+12)%12;
+  const shiftA = ((root - GEN_TEMPLATES.A.base)%12+12)%12;
+  let fam, shift;
+  const eHas = GEN_TEMPLATES.E.tmpl[qual];
+  const aHas = GEN_TEMPLATES.A.tmpl[qual];
+  if(eHas && (!aHas || shiftE<=shiftA)){ fam='E'; shift=shiftE; }
+  else if(aHas){ fam='A'; shift=shiftA; }
+  else { fam='E'; shift=shiftE; }
+  const tmpl = GEN_TEMPLATES[fam].tmpl[qual] || GEN_TEMPLATES[fam].tmpl.maj;
+  let frets = tmpl.map(f=> f<0 ? -1 : f+shift);
+  let baseFret = 1;
+  const maxFret = Math.max(...frets);
+  if(maxFret>4){ baseFret = Math.min(...frets.filter(f=>f>0)); frets = frets.map(f=> f>0? f-baseFret+1 : f); }
+  return {frets, fingers: fingersFromFrets(frets), baseFret, barre: shift>0?1:null, computed:true};
+}
+function chordAlternates(name){
+  // returns up to 2 alternates: open (if exists literal) + computed CAGED, or simple fret-shift variant
+  const alts = [];
+  const main = getChordShape(name);
+  if(!main) return alts;
+  alts.push(main);
+  const parsed = parseChordName(name);
+  if(parsed){
+    const root = noteIndex(parsed.root);
+    const qual = normalizeQuality(parsed.quality);
+    const shiftA = ((root - GEN_TEMPLATES.A.base)%12+12)%12;
+    const shiftE = ((root - GEN_TEMPLATES.E.base)%12+12)%12;
+    ['A','E'].forEach(fam=>{
+      const tmpl = GEN_TEMPLATES[fam].tmpl[qual];
+      if(!tmpl) return;
+      const shift = fam==='A'?shiftA:shiftE;
+      let frets = tmpl.map(f=> f<0?-1:f+shift);
+      let baseFret=1;
+      const maxFret = Math.max(...frets);
+      if(maxFret>4){ baseFret = Math.min(...frets.filter(f=>f>0)); frets=frets.map(f=>f>0?f-baseFret+1:f); }
+      const key = frets.join(',')+baseFret;
+      if(!alts.some(a=> a.frets.join(',')+a.baseFret === key)){
+        alts.push({frets, fingers:fingersFromFrets(frets), baseFret, barre: shift>0?1:null, computed:true});
+      }
+    });
+  }
+  return alts.slice(0,3);
+}
+// String frequencies (standard tuning) E2 A2 D3 G3 B3 e4
+const OPEN_STRING_FREQ = [82.41, 110.00, 146.83, 196.00, 246.94, 329.63];
+function shapeToFrequencies(shape){
+  return shape.frets.map((f,i)=>{
+    if(f===-1) return null;
+    const actualFret = f===0?0:(f + (shape.baseFret-1));
+    return OPEN_STRING_FREQ[i] * Math.pow(2, actualFret/12);
+  });
+}
+
+/* SVG chord diagram renderer */
+function renderChordSVG(name, shape, size){
+  size = size || 130;
+  if(!shape) return '<div style="font-size:.8rem;color:var(--text-dim)">Akor bulunamadı</div>';
+  const W = size, H = size*1.15;
+  const left=24, top=28, right=W-14, bottom=H-14;
+  const stringGap = (right-left)/5;
+  const fretCount = 4;
+  const fretGap = (bottom-top)/fretCount;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="${size}" height="${size*1.15}" role="img" aria-label="${escapeHtml(name)} akor diyagramı">`;
+  // nut or base fret label
+  if(shape.baseFret>1){
+    svg += `<text x="${left-16}" y="${top+fretGap*0.75}" font-size="11" fill="currentColor">${shape.baseFret}fr</text>`;
+  } else {
+    svg += `<rect x="${left-1.5}" y="${top-3}" width="${right-left+3}" height="4" fill="currentColor"/>`;
+  }
+  // strings
+  for(let i=0;i<6;i++){
+    const x = left + i*stringGap;
+    svg += `<line x1="${x}" y1="${top}" x2="${x}" y2="${bottom}" stroke="currentColor" stroke-width="1.4" opacity="0.7"/>`;
+  }
+  // frets
+  for(let f=0; f<=fretCount; f++){
+    const y = top + f*fretGap;
+    svg += `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="currentColor" stroke-width="${f===0&&shape.baseFret===1?0:1}" opacity="0.5"/>`;
+  }
+  // barre
+  if(shape.barre){
+    const fretted = shape.frets.map((f,i)=>({f,i})).filter(o=>o.f===shape.barre);
+    if(fretted.length>1){
+      const minI = Math.min(...fretted.map(o=>o.i)), maxI = Math.max(...fretted.map(o=>o.i));
+      const y = top + (shape.barre-0.5)*fretGap;
+      svg += `<rect x="${left+minI*stringGap-6}" y="${y-6}" width="${(maxI-minI)*stringGap+12}" height="12" rx="6" fill="currentColor" opacity="0.85"/>`;
+    }
+  }
+  // finger dots + open/mute markers
+  shape.frets.forEach((f,i)=>{
+    const x = left + i*stringGap;
+    if(f===-1){
+      svg += `<text x="${x}" y="${top-9}" font-size="12" text-anchor="middle" fill="currentColor">✕</text>`;
+    } else if(f===0){
+      svg += `<circle cx="${x}" cy="${top-9}" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/>`;
+    } else {
+      const y = top + (f-0.5)*fretGap;
+      svg += `<circle cx="${x}" cy="${y}" r="8" fill="var(--accent,#3563e9)"/>`;
+      const fg = shape.fingers ? shape.fingers[i] : 0;
+      if(fg) svg += `<text x="${x}" y="${y+3.5}" font-size="9.5" text-anchor="middle" fill="#fff">${fg}</text>`;
+    }
+  });
+  svg += '</svg>';
+  return svg;
+}
+
+/* =========================================================================
+   CHORDPRO-LIKE PARSING  ([Chord]lyric text, {section: name} lines)
+   ========================================================================= */
+function parseChordProBody(text){
+  const lines = (text||'').replace(/\r\n/g,'\n').split('\n');
+  const sections = [];
+  let current = {name:'Verse', lines:[]};
+  sections.push(current);
+  const sectionRe = /^\{(?:section:|start_of_)?\s*([^}]+?)\}$/i;
+  lines.forEach(raw=>{
+    const line = raw.trim();
+    const secM = line.match(sectionRe);
+    if(secM){
+      current = {name: secM[1].trim(), lines:[]};
+      sections.push(current);
+      return;
+    }
+    if(/^\{.*\}$/.test(line)) return; // ignore other directives (title/artist etc, handled separately)
+    // parse chord markers
+    const units = [];
+    const re = /\[([^\]]+)\]/g;
+    let lastIndex = 0, m, pendingChord=null;
+    if(!re.test(raw)){ /* reset lastIndex */ }
+    re.lastIndex = 0;
+    let out = [];
+    let idx = 0;
+    while((m = re.exec(raw))){
+      const textBefore = raw.slice(idx, m.index);
+      if(textBefore) out.push({chord:pendingChord, text:textBefore});
+      pendingChord = m[1];
+      idx = re.lastIndex;
+    }
+    const rest = raw.slice(idx);
+    out.push({chord:pendingChord, text:rest});
+    // merge: if a unit has chord but empty text and next exists, keep as marker before next word
+    current.lines.push({raw, units: out});
+  });
+  return sections.filter(s=>s.lines.length || sections.length===1);
+}
+function serializeChordProBody(sections){
+  let out = [];
+  sections.forEach(sec=>{
+    out.push(`{section: ${sec.name}}`);
+    sec.lines.forEach(line=>{
+      out.push(line.units.map(u=> (u.chord? `[${u.chord}]`:'') + u.text).join(''));
+    });
+  });
+  return out.join('\n');
+}
+function extractAllChords(sections){
+  const set = [];
+  sections.forEach(sec=> sec.lines.forEach(line=> line.units.forEach(u=>{
+    if(u.chord && !set.includes(u.chord)) set.push(u.chord);
+  })));
+  return set;
+}
+function transposeSections(sections, semitones, useFlats){
+  return sections.map(sec=>({
+    name:sec.name,
+    lines: sec.lines.map(line=>({
+      raw: line.raw,
+      units: line.units.map(u=> ({chord: u.chord? transposeChordName(u.chord, semitones, useFlats): u.chord, text:u.text}))
+    }))
+  }));
+}
+
+/* =========================================================================
+   INDEXEDDB (promise-based)
+   ========================================================================= */
+const DB = (()=>{
+  const DB_NAME='chordstage', DB_VER=1;
+  let dbp = null;
+  function open(){
+    if(dbp) return dbp;
+    dbp = new Promise((resolve,reject)=>{
+      const req = indexedDB.open(DB_NAME, DB_VER);
+      req.onupgradeneeded = e=>{
+        const db = e.target.result;
+        if(!db.objectStoreNames.contains('songs')) db.createObjectStore('songs',{keyPath:'id'});
+        if(!db.objectStoreNames.contains('setlists')) db.createObjectStore('setlists',{keyPath:'id'});
+        if(!db.objectStoreNames.contains('rhythms')) db.createObjectStore('rhythms',{keyPath:'id'});
+        if(!db.objectStoreNames.contains('meta')) db.createObjectStore('meta',{keyPath:'key'});
+      };
+      req.onsuccess = ()=> resolve(req.result);
+      req.onerror = ()=> reject(req.error);
+    });
+    return dbp;
+  }
+  async function tx(store, mode){ const db = await open(); return db.transaction(store, mode).objectStore(store); }
+  return {
+    async getAll(store){
+      try{
+        const os = await tx(store,'readonly');
+        return await new Promise((res,rej)=>{ const r=os.getAll(); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+      }catch(e){ console.error('DB getAll',e); return []; }
+    },
+    async get(store,id){
+      const os = await tx(store,'readonly');
+      return await new Promise((res,rej)=>{ const r=os.get(id); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+    },
+    async put(store,obj){
+      const os = await tx(store,'readwrite');
+      return await new Promise((res,rej)=>{ const r=os.put(obj); r.onsuccess=()=>res(obj); r.onerror=()=>rej(r.error); });
+    },
+    async delete(store,id){
+      const os = await tx(store,'readwrite');
+      return await new Promise((res,rej)=>{ const r=os.delete(id); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+    }
+  };
+})();
+
+/* =========================================================================
+   DEMO DATA (public domain / traditional / original)
+   ========================================================================= */
+function makeSong(o){
+  const now = Date.now();
+  return Object.assign({
+    id: uid(), title:'', artist:'', album:'', key:'C', bpm:100, timeSig:'4/4', capo:0,
+    rhythmId:'basic44', genre:'', notes:'', favorite:false, tags:[],
+    sections: parseChordProBody(o.body||''),
+    chordDuration: 2, // beats per chord for auto timeline
+    tuning:'Standard E', instrument:'guitar',
+    created:now, updated:now
+  }, o, {sections: parseChordProBody(o.body||'')});
+}
+const DEMO_SONGS = [
+  makeSong({
+    title:'Amazing Grace', artist:'Traditional (John Newton)', album:'Public Domain', key:'G', bpm:70, timeSig:'3/4', capo:0,
+    genre:'Traditional', tags:['İngilizce','Geleneksel','Slow'],
+    body:`{section: Verse 1}
+[G]Amazing grace, how [G7]sweet the [C]sound [G]
+That [Em]saved a [D]wretch like [G]me [D]
+[G]I once was [G7]lost, but [C]now am [G]found
+Was [Em]blind but [D]now I [G]see
+
+{section: Verse 2}
+[G]'Twas grace that [G7]taught my [C]heart to [G]fear
+And [Em]grace my [D]fears re[G]lieved
+[G]How precious [G7]did that [C]grace ap[G]pear
+The [Em]hour I [D]first be[G]lieved`
+  }),
+  makeSong({
+    title:'House of the Rising Sun (Traditional Variant)', artist:'Traditional', album:'Public Domain', key:'Am', bpm:120, timeSig:'6/8', capo:0,
+    genre:'Traditional', tags:['İngilizce','Geleneksel','Blues'],
+    body:`{section: Verse 1}
+[Am]There is a [C]house in [D]New Or[F]leans
+They [Am]call the [C]Rising [E]Sun
+[Am]It's been the [C]ruin of [D]many a poor [F]soul
+And [Am]God I [E]know I'm [Am]one`
+  }),
+  makeSong({
+    title:'Twinkle Twinkle Little Star', artist:'Traditional (Jane Taylor)', album:'Public Domain', key:'C', bpm:100, timeSig:'4/4', capo:0,
+    genre:'Traditional', tags:['Çocuk','Geleneksel'],
+    body:`{section: Verse}
+[C]Twinkle twinkle [F]little [C]star
+[C]How I [G]wonder [C]what you [G]are
+[F]Up a[C]bove the [F]world so [C]high
+[F]Like a [C]diamond [G]in the [C]sky
+[C]Twinkle twinkle [F]little [C]star
+[C]How I [G]wonder [C]what you [G]are`
+  }),
+  makeSong({
+    title:'Greensleeves', artist:'Traditional (English Folk)', album:'Public Domain', key:'Am', bpm:90, timeSig:'6/8', capo:0,
+    genre:'Traditional', tags:['Geleneksel','Akustik'],
+    body:`{section: Verse 1}
+[Am]Alas my [C]love you [D]do me [Am]wrong
+To [Am]cast me [G]off dis[Em]courteous[Am]ly
+[Am]For I have [C]loved you [D]well and [Am]long
+De[Am]lighting [E]in your [Am]company`
+  }),
+  makeSong({
+    title:'Sonbahar Rüzgarı', artist:'ChordStage Demo', album:'Orijinal Demo', key:'Em', bpm:84, timeSig:'4/4', capo:0,
+    genre:'Akustik', tags:['Türkçe','Orijinal','Akustik'],
+    body:`{section: Intro}
+[Em] [C] [G] [D]
+
+{section: Verse 1}
+[Em]Bu akşam [C]yine [G]yalnızım [D]
+[Em]Sokaklarda [C]seni [G]aradım [D]
+[Em]Rüzgar [C]savurur [G]yaprakları [D]
+[Em]Aklımda [C]hep [G]o anlar [D]
+
+{section: Chorus}
+[C]Dön [D]desem [Em]duyar [C]mısın
+[C]Rüzgar [D]gibi [Em]geçer [C]mi bu [D]hüzün
+[C]Belki [D]bir gün [Em]yollarımız [C]kesişir
+[C]O za[D]man her [Em]şey ge[C]çişir`
+  }),
+  makeSong({
+    title:'Sahil Şarkısı', artist:'ChordStage Demo', album:'Orijinal Demo', key:'D', bpm:112, timeSig:'4/4', capo:0,
+    genre:'Pop', tags:['Türkçe','Orijinal','Pop'],
+    body:`{section: Verse 1}
+[D]Deniz [A]kenarında [Bm]yürüyoruz [G]biz
+[D]Güneş [A]batarken [G]söylüyoruz [A]şarkımızı
+{section: Chorus}
+[G]Bu [A]yaz [Bm]hiç [G]bitmesin
+[G]Bu [A]an [D]hep [G]sürsün [A]`
+  }),
+];
+const DEMO_RHYTHMS = [
+  {id:'basic44', name:'Basit 4/4', timeSig:'4/4', bpmSuggest:90, pattern:['D','D','D','D']},
+  {id:'pop44', name:'Pop 4/4', timeSig:'4/4', bpmSuggest:100, pattern:['D','DU','U','DU']},
+  {id:'akustik44', name:'Akustik', timeSig:'4/4', bpmSuggest:95, pattern:['D','DU','UU','DU']},
+  {id:'rock44', name:'Rock', timeSig:'4/4', bpmSuggest:130, pattern:['D','D','U','D','U']},
+  {id:'slow44', name:'Slow', timeSig:'4/4', bpmSuggest:70, pattern:['D','-','D','-']},
+  {id:'sixeight', name:'6/8', timeSig:'6/8', bpmSuggest:80, pattern:['D','DU','D','DU']},
+  {id:'ballad44', name:'Balad', timeSig:'4/4', bpmSuggest:75, pattern:['D','-','DU','-']},
+  {id:'country44', name:'Country', timeSig:'4/4', bpmSuggest:110, pattern:['D','U','D','U']},
+  {id:'reggae44', name:'Reggae', timeSig:'4/4', bpmSuggest:90, pattern:['-','U','-','U']},
+  {id:'waltz34', name:'Vals 3/4', timeSig:'3/4', bpmSuggest:110, pattern:['D','U','U']},
+  {id:'funk44', name:'Funk', timeSig:'4/4', bpmSuggest:100, pattern:['D','UU','U','DU']},
+];
+
+/* =========================================================================
+   AUDIO ENGINE (Web Audio API): chord pluck, metronome & rhythm scheduler
+   ========================================================================= */
+const AudioEngine = (()=>{
+  let ctx = null;
+  function ensure(){
+    if(!ctx){
+      try{ ctx = new (window.AudioContext||window.webkitAudioContext)(); }
+      catch(e){ toast('Ses motoru başlatılamadı','err'); return null; }
+    }
+    if(ctx.state==='suspended') ctx.resume();
+    return ctx;
+  }
+  let masterVol = 0.7;
+  function setVolume(v){ masterVol = v; }
+  function pluckString(freq, when, dur, vol){
+    const c = ensure(); if(!c) return;
+    const osc = c.createOscillator();
+    const osc2 = c.createOscillator();
+    const gain = c.createGain();
+    osc.type='triangle'; osc2.type='sine'; osc2.frequency.value=freq*2;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.linearRampToValueAtTime((vol!=null?vol:masterVol)*0.5, when+0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when+dur);
+    const g2 = c.createGain(); g2.gain.value=0.05;
+    osc.connect(gain); osc2.connect(g2); g2.connect(gain);
+    gain.connect(c.destination);
+    osc.start(when); osc2.start(when);
+    osc.stop(when+dur+0.02); osc2.stop(when+dur+0.02);
+  }
+  function strumChord(shape, opts){
+    if(!shape) return;
+    opts = opts || {};
+    const c = ensure(); if(!c) return;
+    const freqs = shapeToFrequencies(shape);
+    const now = c.currentTime;
+    const dir = opts.direction==='up' ? -1 : 1;
+    const order = freqs.map((f,i)=>({f,i})).filter(o=>o.f).sort((a,b)=> dir*(a.i-b.i));
+    order.forEach((o,k)=> pluckString(o.f, now+k*0.018, opts.dur||1.1, opts.vol));
+  }
+  // metronome / rhythm scheduler using lookahead
+  let schedulerTimer=null, nextNoteTime=0, current16th=0, beatsPerMeasure=4, bpm=90, running=false;
+  let onBeatCb=null, pattern=null, patternIndex=0, currentChordShape=null;
+  const LOOKAHEAD=0.12, INTERVAL=25;
+  function metroClick(when, accent){
+    const c=ensure(); if(!c) return;
+    const osc=c.createOscillator(); const g=c.createGain();
+    osc.frequency.value = accent?1500:900;
+    g.gain.setValueAtTime(masterVol*0.9, when);
+    g.gain.exponentialRampToValueAtTime(0.001, when+0.06);
+    osc.connect(g); g.connect(c.destination);
+    osc.start(when); osc.stop(when+0.07);
+  }
+  function scheduler(){
+    const c = ensure(); if(!c) return;
+    while(nextNoteTime < c.currentTime + LOOKAHEAD){
+      const beatInMeasure = current16th % beatsPerMeasure;
+      metroClick(nextNoteTime, beatInMeasure===0);
+      if(pattern && pattern.length){
+        const step = pattern[current16th % pattern.length];
+        if(step && step!=='-' ){
+          if(currentChordShape){
+            if(step==='DU'||step==='UU'){
+              strumChord(currentChordShape,{direction:'down', dur:0.35, when:nextNoteTime});
+            } else {
+              strumChord(currentChordShape,{direction: step==='U'?'up':'down', dur:0.5});
+            }
+          }
+        }
+      }
+      if(onBeatCb) onBeatCb(beatInMeasure, nextNoteTime);
+      const secondsPerBeat = 60.0/bpm;
+      nextNoteTime += secondsPerBeat;
+      current16th++;
+    }
+    schedulerTimer = setTimeout(scheduler, INTERVAL);
+  }
+  return {
+    ensure, setVolume, strumChord, pluckString,
+    startMetronome(newBpm, sig, cb){
+      const c=ensure(); if(!c) return;
+      bpm = newBpm; beatsPerMeasure = parseInt(sig)||4; current16th=0; onBeatCb=cb;
+      nextNoteTime = c.currentTime + 0.05;
+      if(running) return;
+      running=true; scheduler();
+    },
+    setBpm(v){ bpm=v; },
+    setChordShapeForStrum(shape){ currentChordShape = shape; },
+    setPattern(p){ pattern = p; },
+    stopMetronome(){ running=false; clearTimeout(schedulerTimer); },
+    isRunning(){ return running; },
+    getCtx(){ return ctx; }
+  };
+})();
+
+/* =========================================================================
+   APP STATE
+   ========================================================================= */
+const State = {
+  songs: [], setlists: [], rhythms: [],
+  currentSong: null, currentSetlist:null,
+  filter:{q:'', fav:false, recent:false, tag:null},
+  recentIds: [],
+  settings:{ theme:'light', fontSize:1.15, chordSize:1.0, scrollSpeed:100, defaultBpm:100, defaultRhythm:'basic44', showDiagrams:true, animations:true, lefty:false, volume:0.7 },
+  transpose:0, // current display transpose (semitones), not saved to song
+  selectedChord:null,
+  player:{ playing:false, timeline:[], startTime:0, pausedAt:0, activeIdx:-1, rafId:null, autoScroll:false, mode:'normal' /* or rehearsal */ },
+};
+
+async function loadAll(){
+  let songs = await DB.getAll('songs');
+  if(!songs.length){
+    for(const s of DEMO_SONGS) await DB.put('songs', s);
+    songs = DEMO_SONGS;
+  }
+  State.songs = songs;
+  let rhythms = await DB.getAll('rhythms');
+  if(!rhythms.length){
+    for(const r of DEMO_RHYTHMS) await DB.put('rhythms', r);
+    rhythms = DEMO_RHYTHMS;
+  }
+  State.rhythms = rhythms;
+  State.setlists = await DB.getAll('setlists');
+  const meta = await DB.get('meta','settings');
+  if(meta) Object.assign(State.settings, meta.value);
+  const rec = await DB.get('meta','recent');
+  if(rec) State.recentIds = rec.value;
+  applySettingsToUI();
+}
+function saveSettings(){ DB.put('meta',{key:'settings', value:State.settings}); }
+function pushRecent(id){
+  State.recentIds = [id, ...State.recentIds.filter(x=>x!==id)].slice(0,15);
+  DB.put('meta',{key:'recent', value:State.recentIds});
+}
+
+/* =========================================================================
+   RENDERING: SIDEBAR / LIBRARY
+   ========================================================================= */
+function allTags(){
+  const set = new Set();
+  State.songs.forEach(s=> (s.tags||[]).forEach(t=>set.add(t)));
+  return Array.from(set);
+}
+function renderCategoryTags(){
+  const el = $('#categoryTags');
+  const tags = allTags();
+  el.innerHTML = tags.map(t=>`<span class="tagchip ${State.filter.tag===t?'active':''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</span>`).join('');
+}
+function filteredSongs(){
+  let list = State.songs.slice();
+  const q = State.filter.q.trim().toLowerCase();
+  if(q){
+    list = list.filter(s=> [s.title,s.artist,s.key,(s.tags||[]).join(' ')].join(' ').toLowerCase().includes(q));
+  }
+  if(State.filter.fav) list = list.filter(s=>s.favorite);
+  if(State.filter.tag) list = list.filter(s=> (s.tags||[]).includes(State.filter.tag));
+  if(State.filter.recent){
+    list = State.recentIds.map(id=> State.songs.find(s=>s.id===id)).filter(Boolean);
+  } else {
+    list = list.sort((a,b)=> a.title.localeCompare(b.title,'tr'));
+  }
+  return list;
+}
+let renderedCount = 0;
+function renderSongList(){
+  renderCategoryTags();
+  const list = filteredSongs();
+  const el = $('#songList');
+  const BATCH = 40;
+  renderedCount = Math.min(BATCH, list.length);
+  el.innerHTML = list.slice(0, renderedCount).map(songItemHtml).join('') ||
+    `<div style="color:var(--text-dim); padding:20px; text-align:center;">Şarkı bulunamadı</div>`;
+  el.onscroll = ()=>{
+    if(el.scrollTop + el.clientHeight > el.scrollHeight - 60 && renderedCount < list.length){
+      const more = list.slice(renderedCount, renderedCount+BATCH);
+      el.insertAdjacentHTML('beforeend', more.map(songItemHtml).join(''));
+      renderedCount += more.length;
+    }
+  };
+}
+function songItemHtml(s){
+  return `<div class="songitem ${State.currentSong && State.currentSong.id===s.id?'selected':''}" data-id="${s.id}">
+    <div style="min-width:0;">
+      <div class="title">${escapeHtml(s.title)}</div>
+      <div class="meta">${escapeHtml(s.artist||'')} · ${escapeHtml(s.key)} · ${s.bpm} BPM</div>
+    </div>
+    <button class="fav" data-fav="${s.id}">${s.favorite?'★':'☆'}</button>
+  </div>`;
+}
+$('#songList').addEventListener('click', e=>{
+  const favBtn = e.target.closest('[data-fav]');
+  if(favBtn){
+    const s = State.songs.find(x=>x.id===favBtn.dataset.fav);
+    s.favorite = !s.favorite; DB.put('songs', s); renderSongList();
+    return;
+  }
+  const item = e.target.closest('.songitem');
+  if(item) openSong(item.dataset.id);
+});
+$('#searchBox').addEventListener('input', e=>{ State.filter.q = e.target.value; renderSongList(); });
+$('#filterFav').addEventListener('click', ()=>{ State.filter.fav = !State.filter.fav; $('#filterFav').classList.toggle('primary', State.filter.fav); renderSongList(); });
+$('#filterRecent').addEventListener('click', ()=>{ State.filter.recent = !State.filter.recent; $('#filterRecent').classList.toggle('primary', State.filter.recent); renderSongList(); });
+$('#categoryTags').addEventListener('click', e=>{
+  const chip = e.target.closest('.tagchip'); if(!chip) return;
+  State.filter.tag = State.filter.tag === chip.dataset.tag ? null : chip.dataset.tag;
+  renderSongList();
+});
+
+/* =========================================================================
+   VIEW SWITCHING
+   ========================================================================= */
+function showView(name){
+  ['viewLibraryEmpty','viewSong','viewChordLib','viewRhythmLib','viewSetlists'].forEach(id=> $('#'+id).classList.add('hidden'));
+  if(name==='song'){ $('#viewSong').classList.remove('hidden'); }
+  else if(name==='chordlib'){ $('#viewChordLib').classList.remove('hidden'); renderChordLibGrid(); }
+  else if(name==='rhythmlib'){ $('#viewRhythmLib').classList.remove('hidden'); renderRhythmGrid(); }
+  else if(name==='setlists'){ $('#viewSetlists').classList.remove('hidden'); renderSetlistsView(); }
+  else { $('#viewLibraryEmpty').classList.remove('hidden'); }
+  $$('.navbtn').forEach(b=> b.classList.toggle('active', b.dataset.view===name || (name==='song' && b.dataset.view==='library')));
+  closeSidebarMobile();
+}
+$$('.navbtn').forEach(b=> b.addEventListener('click', ()=>{
+  if(b.dataset.view==='library'){ showView(State.currentSong?'song':'library'); }
+  else showView(b.dataset.view);
+}));
+
+/* =========================================================================
+   SONG VIEWER
+   ========================================================================= */
+function openSong(id){
+  const s = State.songs.find(x=>x.id===id);
+  if(!s) return;
+  stopPlayback();
+  State.currentSong = s;
+  State.transpose = 0;
+  pushRecent(id);
+  renderSongList();
+  showView('song');
+  renderSongHeader();
+  renderLyrics();
+  renderTransport();
+  buildTimeline();
+}
+function effectiveSections(){
+  const s = State.currentSong;
+  if(!s) return [];
+  if(State.transpose===0) return s.sections;
+  return transposeSections(s.sections, State.transpose, keyPrefersFlats(s.key));
+}
+function displayedKey(){
+  const s = State.currentSong; if(!s) return '';
+  if(State.transpose===0) return s.key;
+  const p = parseChordName(s.key.replace(/m$/,'')+(s.key.endsWith('m')?'':''));
+  const isMinor = /m$/.test(s.key) && !/maj/i.test(s.key);
+  const root = s.key.replace(/m$/,'');
+  const idx = noteIndex(root);
+  if(idx==null) return s.key;
+  return noteName(idx+State.transpose, keyPrefersFlats(s.key)) + (isMinor?'m':'');
+}
+function renderSongHeader(){
+  const s = State.currentSong;
+  const el = $('#songHeader');
+  const capoNote = s.capo>0 ? noteName(noteIndex((s.key.replace(/m$/,''))) + s.capo) + (s.key.endsWith('m')?'m':'') : null;
+  el.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+      <div>
+        <h1>${escapeHtml(s.title)}</h1>
+        <div class="artist">${escapeHtml(s.artist||'')}${s.album?' · '+escapeHtml(s.album):''}</div>
+      </div>
+      <div class="editbtns" style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn icon" id="btnFavToggle" title="Favori">${s.favorite?'★':'☆'}</button>
+        <button class="btn icon" id="btnEditSong" title="Düzenle">✏️</button>
+        <button class="btn icon" id="btnExportSong" title="Dışa Aktar">📤</button>
+        <button class="btn icon" id="btnPrintSong" title="Yazdır / PDF">🖨️</button>
+        <button class="btn icon" id="btnAddToSetlist" title="Setliste ekle">📋</button>
+        <button class="btn icon danger" id="btnDeleteSong" title="Sil">🗑️</button>
+      </div>
+    </div>
+    <div class="infobar">
+      <span class="pill">🎵 Ton: <b>${escapeHtml(displayedKey())}</b>${s.capo>0?` (Capo ${s.capo}: gerçek ${escapeHtml(capoNote)})`:''}</span>
+      <span class="pill">⏱ <button id="bpmMinus">–</button> <span id="bpmVal">${s.bpm}</span> BPM <button id="bpmPlus">+</button></span>
+      <span class="pill">📐 ${escapeHtml(s.timeSig)}</span>
+      <span class="pill">🪗 Capo: <select id="capoSelect">${Array.from({length:13},(_,i)=>`<option value="${i}" ${s.capo===i?'selected':''}>${i}</option>`).join('')}</select></span>
+      <span class="pill">🥁 Ritim: <select id="rhythmSelect">${State.rhythms.map(r=>`<option value="${r.id}" ${s.rhythmId===r.id?'selected':''}>${escapeHtml(r.name)}</option>`).join('')}</select></span>
+      <span class="pill">🎼 Transpoze: <button id="transDown">–</button> <span id="transVal">${State.transpose>0?'+':''}${State.transpose}</span> <button id="transUp">+</button></span>
+    </div>`;
+  $('#btnFavToggle').onclick=()=>{ s.favorite=!s.favorite; DB.put('songs',s); renderSongHeader(); renderSongList(); };
+  $('#btnEditSong').onclick=()=> openEditor(s);
+  $('#btnExportSong').onclick=()=> openExportModal(s);
+  $('#btnPrintSong').onclick=()=> printSong(s);
+  $('#btnAddToSetlist').onclick=()=> openAddToSetlistModal(s);
+  $('#btnDeleteSong').onclick=()=> deleteSong(s);
+  $('#bpmMinus').onclick=()=>{ s.bpm=clamp(s.bpm-1,40,240); DB.put('songs',s); renderSongHeader(); renderTransport(); };
+  $('#bpmPlus').onclick=()=>{ s.bpm=clamp(s.bpm+1,40,240); DB.put('songs',s); renderSongHeader(); renderTransport(); };
+  $('#capoSelect').onchange=e=>{ s.capo=parseInt(e.target.value); DB.put('songs',s); renderSongHeader(); };
+  $('#rhythmSelect').onchange=e=>{ s.rhythmId=e.target.value; DB.put('songs',s); renderTransport(); };
+  $('#transDown').onclick=()=>{ State.transpose=clamp(State.transpose-1,-11,11); renderSongHeader(); renderLyrics(); buildTimeline(); };
+  $('#transUp').onclick=()=>{ State.transpose=clamp(State.transpose+1,-11,11); renderSongHeader(); renderLyrics(); buildTimeline(); };
+}
+function renderLyrics(){
+  const s = State.currentSong;
+  const sections = effectiveSections();
+  const el = $('#lyricsWrap');
+  el.style.setProperty('--font-lyrics', State.settings.fontSize+'rem');
+  el.innerHTML = sections.map((sec,si)=>{
+    const lines = sec.lines.map((line,li)=>{
+      if(!line.units.length || (line.units.length===1 && !line.units[0].chord && !line.units[0].text.trim())){
+        return `<div class="emptyline"></div>`;
+      }
+      const clus = line.units.map((u,ui)=>{
+        const words = u.text.length ? escapeHtml(u.text) : '&nbsp;';
+        return `<span class="clu" data-sec="${si}" data-line="${li}" data-u="${ui}">
+          ${u.chord?`<span class="chordtag" data-chord="${escapeHtml(u.chord)}">${escapeHtml(u.chord)}</span>`:''}
+          <span class="lyricword clickable" data-sec="${si}" data-line="${li}" data-u="${ui}">${words}</span>
+        </span>`;
+      }).join('');
+      return `<div class="lyric-line">${clus}</div>`;
+    }).join('');
+    return `<div class="section-block"><div class="section-title">${escapeHtml(sec.name)}</div>${lines}</div>`;
+  }).join('');
+}
+$('#lyricsWrap').addEventListener('click', e=>{
+  const chordTag = e.target.closest('.chordtag');
+  if(chordTag){ showChordDetail(chordTag.dataset.chord); return; }
+  const word = e.target.closest('.lyricword');
+  if(word && !State.player.playing){ openChordPickerAt(word); }
+});
+
+/* =========================================================================
+   RIGHT PANEL — CHORD DETAIL
+   ========================================================================= */
+function showChordDetail(name){
+  State.selectedChord = name;
+  $('#chordDetailEmpty').classList.add('hidden');
+  const el = $('#chordDetail'); el.classList.remove('hidden');
+  const shape = getChordShape(name);
+  const alts = chordAlternates(name);
+  el.innerHTML = `
+    <div class="chordDetailTitle">${escapeHtml(name)}</div>
+    <div id="chordSvgHolder">${renderChordSVG(name, shape, 150)}</div>
+    <div style="display:flex; gap:8px; justify-content:center; margin-bottom:8px;">
+      <button class="btn primary" id="playChordBtn">🔊 Çal</button>
+      <button class="btn" id="customChordBtn">✏️ Özel Akor</button>
+    </div>
+    ${shape && shape.computed ? '<div style="font-size:.72rem;color:var(--text-dim);text-align:center;">Hesaplanan pozisyon (CAGED)</div>':''}
+    <div class="stringinfo">${stringInfoText(shape)}</div>
+    ${alts.length>1?`<div style="margin-top:10px;"><div class="section-title" style="border:none;padding:0;">Alternatif Pozisyonlar</div>
+      <div class="altRow">${alts.map((a,i)=>`<div class="altchip" data-alt="${i}">${renderChordSVG(name,a,70)}</div>`).join('')}</div></div>`:''}
+  `;
+  $('#playChordBtn').onclick=()=> AudioEngine.strumChord(shape,{direction:'down',dur:1.3,vol:State.settings.volume});
+  $('#customChordBtn').onclick=()=> openCustomChordModal(name);
+  $$('.altchip', el).forEach((chip,i)=> chip.onclick=()=>{
+    const a = alts[i];
+    $('#chordSvgHolder').innerHTML = renderChordSVG(name,a,150);
+    $('.stringinfo',el).textContent = stringInfoText(a);
+    $('#playChordBtn').onclick=()=> AudioEngine.strumChord(a,{direction:'down',dur:1.3,vol:State.settings.volume});
+  });
+}
+function stringInfoText(shape){
+  if(!shape) return '';
+  const names=['E (kalın)','A','D','G','B','e (ince)'];
+  return shape.frets.map((f,i)=> `${names[i]} | ${f===-1?'X (kapalı)': f===0?'0 (açık)': (f+(shape.baseFret-1))+' (parmak '+ (shape.fingers?shape.fingers[i]:'')+')'}`).join('\n');
+}
+
+/* =========================================================================
+   CHORD PICKER (click on lyric word to attach a chord)
+   ========================================================================= */
+const CHORD_SUGGEST_BASE = Object.keys(CHORD_SHAPES);
+function openChordPickerAt(wordEl){
+  const picker = $('#chordPicker');
+  const rect = wordEl.getBoundingClientRect();
+  picker.classList.remove('hidden');
+  let top = rect.bottom+6, left = rect.left;
+  if(left+260>window.innerWidth) left = window.innerWidth-270;
+  if(top+340>window.innerHeight) top = rect.top-346;
+  picker.style.top = top+'px'; picker.style.left = left+'px';
+  const sec = +wordEl.dataset.sec, line = +wordEl.dataset.line, u = +wordEl.dataset.u;
+  const currentUnit = State.currentSong.sections[sec].lines[line].units[u];
+  picker.innerHTML = `<input type="text" id="cpInput" placeholder="Akor ara veya yaz (örn: Am7)" autocomplete="off" value="${currentUnit.chord?escapeHtml(currentUnit.chord):''}">
+    <div id="cpList"></div>
+    ${currentUnit.chord?'<div class="cp-item cp-remove" id="cpRemove">✕ Akoru kaldır</div>':''}`;
+  const input = $('#cpInput', picker);
+  function renderList(){
+    const q = input.value.trim().toLowerCase();
+    let opts = CHORD_SUGGEST_BASE.filter(c=> c.toLowerCase().startsWith(q));
+    if(q && !opts.includes(input.value.trim())) opts = [input.value.trim(), ...opts].filter(Boolean);
+    $('#cpList', picker).innerHTML = opts.slice(0,25).map(c=>`<div class="cp-item" data-c="${escapeHtml(c)}">${escapeHtml(c)}</div>`).join('');
+  }
+  renderList();
+  input.oninput = renderList;
+  input.focus();
+  picker.onclick = e=>{
+    const item = e.target.closest('.cp-item:not(.cp-remove)');
+    if(item){ setChordOnUnit(sec,line,u,item.dataset.c); closeChordPicker(); return; }
+    if(e.target.id==='cpRemove'){ setChordOnUnit(sec,line,u,null); closeChordPicker(); }
+  };
+  input.onkeydown = e=>{
+    if(e.key==='Enter' && input.value.trim()){ setChordOnUnit(sec,line,u,input.value.trim()); closeChordPicker(); }
+    if(e.key==='Escape') closeChordPicker();
+  };
+  setTimeout(()=> document.addEventListener('click', outsidePickerClick), 0);
+}
+function outsidePickerClick(e){
+  const picker = $('#chordPicker');
+  if(!picker.contains(e.target)){ closeChordPicker(); }
+}
+function closeChordPicker(){
+  $('#chordPicker').classList.add('hidden');
+  document.removeEventListener('click', outsidePickerClick);
+}
+function setChordOnUnit(sec,line,u,chord){
+  const s = State.currentSong;
+  s.sections[sec].lines[line].units[u].chord = chord;
+  s.updated = Date.now();
+  DB.put('songs', s);
+  State.transpose = 0;
+  renderLyrics();
+  buildTimeline();
+}
+
+/* =========================================================================
+   TRANSPORT / METRONOME / PLAYBACK / TIMELINE
+   ========================================================================= */
+function currentRhythm(){
+  return State.rhythms.find(r=> r.id===State.currentSong.rhythmId) || State.rhythms[0];
+}
+function renderTransport(){
+  const s = State.currentSong;
+  const el = $('#transport');
+  const beatsCount = parseInt(s.timeSig)||4;
+  el.innerHTML = `
+    <button class="btn icon" id="btnPrevChord" title="Önceki Akor">◀</button>
+    <button class="btn primary icon" id="btnPlay" title="Play/Pause (Space)">▶</button>
+    <button class="btn icon" id="btnStop" title="Durdur">⏹</button>
+    <button class="btn icon" id="btnNextChord" title="Sonraki Akor">▶</button>
+    <div id="beatDots">${Array.from({length:beatsCount},(_,i)=>`<div class="beatdot ${i===0?'first':''}"></div>`).join('')}</div>
+    <span class="bpmdisplay" id="transBpm">${s.bpm} BPM</span>
+    <button class="btn icon" id="btnTap" title="Tap Tempo">👆 Tap</button>
+    <label style="display:flex;align-items:center;gap:4px; font-size:.8rem;">🔁 Kaydırma
+      <select id="scrollSpeedSel">
+        <option value="0">Manuel</option>
+        <option value="50">%50</option><option value="75">%75</option>
+        <option value="100" selected>%100</option><option value="125">%125</option><option value="150">%150</option>
+      </select>
+    </label>
+    <label style="display:flex;align-items:center;gap:4px; font-size:.8rem;">🧘 Prova
+      <input type="checkbox" id="rehearsalToggle">
+    </label>
+    <div class="grow"></div>
+    <span style="font-size:.75rem; color:var(--text-dim);" id="rhythmVisual"></span>
+    <input type="range" id="volSlider" min="0" max="1" step="0.05" value="${State.settings.volume}" title="Ses seviyesi">
+  `;
+  $('#btnPlay').onclick = togglePlay;
+  $('#btnStop').onclick = stopPlayback;
+  $('#btnPrevChord').onclick = ()=> stepChord(-1);
+  $('#btnNextChord').onclick = ()=> stepChord(1);
+  $('#btnTap').onclick = tapTempo;
+  $('#scrollSpeedSel').onchange = e=> State.player.autoScrollSpeed = parseInt(e.target.value);
+  $('#rehearsalToggle').onchange = e=> { State.player.mode = e.target.checked?'rehearsal':'normal'; };
+  $('#volSlider').oninput = e=>{ State.settings.volume=parseFloat(e.target.value); AudioEngine.setVolume(State.settings.volume); saveSettings(); };
+  renderRhythmVisual();
+}
+function renderRhythmVisual(){
+  const r = currentRhythm();
+  $('#rhythmVisual').textContent = r ? `${r.name}: ${r.pattern.map(p=>p==='D'?'↓':p==='U'?'↑':p==='DU'?'↓↑':p==='UU'?'↑↑':'–').join(' ')}` : '';
+}
+let tapTimes = [];
+function tapTempo(){
+  const now = performance.now();
+  tapTimes = tapTimes.filter(t=> now-t < 2500);
+  tapTimes.push(now);
+  if(tapTimes.length>=2){
+    const diffs = []; for(let i=1;i<tapTimes.length;i++) diffs.push(tapTimes[i]-tapTimes[i-1]);
+    const avg = diffs.slice(-8).reduce((a,b)=>a+b,0)/Math.min(diffs.length,8);
+    const bpm = clamp(Math.round(60000/avg),40,240);
+    State.currentSong.bpm = bpm; DB.put('songs',State.currentSong);
+    renderSongHeader(); renderTransport();
+  }
+}
+
+// ---- Timeline generation: distribute chords across time using bpm + chordDuration(beats) ----
+function buildTimeline(){
+  const s = State.currentSong;
+  const sections = effectiveSections();
+  const secondsPerBeat = 60/s.bpm;
+  const chordBeats = s.chordDuration || 2;
+  let t = 0;
+  const timeline = [];
+  const flatUnits = [];
+  sections.forEach((sec,si)=> sec.lines.forEach((line,li)=> line.units.forEach((u,ui)=>{
+    flatUnits.push({sec:si,line:li,u:ui,chord:u.chord});
+  })));
+  flatUnits.forEach(fu=>{
+    if(fu.chord){
+      timeline.push({t, chord:fu.chord, sec:fu.sec, line:fu.line, u:fu.u});
+      t += chordBeats*secondsPerBeat;
+    }
+  });
+  State.player.timeline = timeline;
+  State.player.duration = t;
+  renderChordFlow(-1);
+  renderTimelineBar();
+}
+function renderTimelineBar(){
+  const bar = $('#timelineBar');
+  const tl = State.player.timeline;
+  const dur = State.player.duration || 1;
+  $$('.tl-seg',bar).forEach(n=>n.remove());
+  tl.forEach((seg,i)=>{
+    const next = tl[i+1] ? tl[i+1].t : dur;
+    const width = ((next-seg.t)/dur)*100;
+    const left = (seg.t/dur)*100;
+    const div = document.createElement('div');
+    div.className='tl-seg'; div.dataset.idx=i;
+    div.style.left = left+'%'; div.style.width = Math.max(width,2)+'%';
+    div.textContent = seg.chord;
+    div.onclick = ()=> seekToIndex(i);
+    bar.appendChild(div);
+  });
+}
+function renderChordFlow(activeIdx){
+  const tl = State.player.timeline;
+  const el = $('#chordFlow');
+  const prev = tl[activeIdx-1], cur = tl[activeIdx], next = tl[activeIdx+1], next2 = tl[activeIdx+2];
+  function box(seg,label,cls){
+    return `<div class="cf-box ${cls}"><div class="lbl">${label}</div><div class="cname">${seg?escapeHtml(seg.chord):'—'}</div></div>`;
+  }
+  el.innerHTML = `${box(prev,'Önceki','prev')}<span class="arrow">→</span>${box(cur,'ŞİMDİ','now')}<span class="arrow">→</span>${box(next,'Sonraki','next')}<span class="arrow">→</span>${box(next2,'','')}`;
+}
+
+function togglePlay(){ State.player.playing ? pausePlayback() : startPlayback(); }
+function startPlayback(){
+  AudioEngine.ensure();
+  const s = State.currentSong;
+  const rhythm = currentRhythm();
+  const bpm = State.player.mode==='rehearsal' ? Math.max(30, Math.round(s.bpm/2)) : s.bpm;
+  AudioEngine.setPattern(rhythm.pattern);
+  AudioEngine.startMetronome(bpm, s.timeSig, onBeat);
+  $('#nowPlaying').classList.add('show');
+  State.player.playing = true;
+  $('#btnPlay').textContent = '⏸';
+  State.player.startTime = performance.now()/1000 - (State.player.pausedAt||0);
+  State.player.autoScrollSpeed = State.player.autoScrollSpeed ?? 100;
+  tickPlayback();
+}
+function pausePlayback(){
+  State.player.playing = false;
+  State.player.pausedAt = performance.now()/1000 - State.player.startTime;
+  AudioEngine.stopMetronome();
+  $('#btnPlay').textContent = '▶';
+  cancelAnimationFrame(State.player.rafId);
+}
+function stopPlayback(){
+  State.player.playing = false;
+  State.player.pausedAt = 0;
+  AudioEngine.stopMetronome();
+  cancelAnimationFrame(State.player.rafId);
+  if($('#btnPlay')) $('#btnPlay').textContent='▶';
+  $('#nowPlaying') && $('#nowPlaying').classList.remove('show');
+  highlightChordAt(-1);
+  if(State.player.timeline) renderChordFlow(-1);
+}
+let beatCounter=0;
+function onBeat(beatInMeasure, when){
+  beatCounter++;
+  const dots = $$('.beatdot');
+  dots.forEach((d,i)=> d.classList.toggle('on', i===beatInMeasure));
+  const shape = getChordShape(currentActiveChordName());
+  AudioEngine.setChordShapeForStrum(shape);
+}
+function currentActiveChordName(){
+  const idx = State.player.activeIdx;
+  const seg = State.player.timeline[idx];
+  return seg ? seg.chord : null;
+}
+function tickPlayback(){
+  if(!State.player.playing) return;
+  const elapsed = performance.now()/1000 - State.player.startTime;
+  const tl = State.player.timeline;
+  let idx = -1;
+  for(let i=0;i<tl.length;i++){ if(tl[i].t<=elapsed) idx=i; else break; }
+  if(idx !== State.player.activeIdx){
+    State.player.activeIdx = idx;
+    highlightChordAt(idx);
+    renderChordFlow(idx);
+  }
+  updateTimelineCursor(elapsed);
+  if(State.player.autoScrollSpeed>0) autoScrollStep();
+  if(elapsed > (State.player.duration||0) + 2){ stopPlayback(); return; }
+  State.player.rafId = requestAnimationFrame(tickPlayback);
+}
+function updateTimelineCursor(elapsed){
+  const dur = State.player.duration||1;
+  $('#tlCursor').style.left = clamp((elapsed/dur)*100,0,100)+'%';
+}
+function highlightChordAt(idx){
+  $$('.clu').forEach(c=> c.classList.remove('playing-chord','upcoming-chord'));
+  $$('.tl-seg').forEach(c=> c.classList.remove('active'));
+  const seg = State.player.timeline[idx];
+  if(!seg) return;
+  const sel = `.clu[data-sec="${seg.sec}"][data-line="${seg.line}"][data-u="${seg.u}"]`;
+  const node = $(sel);
+  if(node){ node.classList.add('playing-chord'); if(State.player.autoScrollSpeed>0) node.scrollIntoView({block:'center', behavior:'smooth'}); }
+  const nextSeg = State.player.timeline[idx+1];
+  if(nextSeg){
+    const nsel = `.clu[data-sec="${nextSeg.sec}"][data-line="${nextSeg.line}"][data-u="${nextSeg.u}"]`;
+    const nnode = $(nsel); if(nnode) nnode.classList.add('upcoming-chord');
+  }
+  const tlSeg = $(`.tl-seg[data-idx="${idx}"]`); if(tlSeg) tlSeg.classList.add('active');
+}
+let lastAutoScroll = 0;
+function autoScrollStep(){
+  const now = performance.now();
+  if(now-lastAutoScroll < 40) return;
+  lastAutoScroll = now;
+  const wrap = $('#lyricsWrap');
+  const speedFactor = (State.player.autoScrollSpeed||100)/100;
+  wrap.scrollTop += 0.35*speedFactor;
+}
+function seekToIndex(i){
+  const tl = State.player.timeline;
+  if(!tl[i]) return;
+  State.player.pausedAt = tl[i].t;
+  State.player.startTime = performance.now()/1000 - tl[i].t;
+  State.player.activeIdx = i;
+  highlightChordAt(i); renderChordFlow(i); updateTimelineCursor(tl[i].t);
+}
+function stepChord(dir){
+  const tl = State.player.timeline;
+  let idx = clamp((State.player.activeIdx<0?-1:State.player.activeIdx)+dir, 0, tl.length-1);
+  seekToIndex(idx);
+  if(!State.player.playing){
+    const shape = getChordShape(tl[idx].chord);
+    AudioEngine.strumChord(shape,{direction:'down',dur:1,vol:State.settings.volume});
+    showChordDetail(tl[idx].chord);
+  }
+}
+$('#lyricsWrap').addEventListener('pointerdown', ()=>{
+  if(State.player.playing && State.player.autoScrollSpeed>0){ State.player.autoScrollSpeed = 0; toast('Otomatik kaydırma durduruldu (manuel)'); }
+});
+
+/* =========================================================================
+   CHORD LIBRARY VIEW
+   ========================================================================= */
+function renderChordLibGrid(){
+  const q = ($('#chordLibSearch').value||'').trim();
+  const list = q ? [q, ...CHORD_SUGGEST_BASE.filter(c=>c.toLowerCase().includes(q.toLowerCase()))] : CHORD_SUGGEST_BASE;
+  $('#chordLibGrid').innerHTML = list.map(name=>{
+    const shape = getChordShape(name);
+    return `<div class="btn" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px;" data-chord="${escapeHtml(name)}">
+      <b>${escapeHtml(name)}</b>${renderChordSVG(name,shape,90)}
+    </div>`;
+  }).join('');
+  $$('#chordLibGrid [data-chord]').forEach(n=> n.onclick=()=>{
+    showChordDetail(n.dataset.chord);
+    AudioEngine.strumChord(getChordShape(n.dataset.chord),{direction:'down',vol:State.settings.volume});
+  });
+}
+$('#chordLibSearch').addEventListener('input', renderChordLibGrid);
+
+/* =========================================================================
+   RHYTHM LIBRARY VIEW + EDITOR
+   ========================================================================= */
+function renderRhythmGrid(){
+  $('#rhythmGrid').innerHTML = State.rhythms.map(r=>`
+    <div class="btn" style="display:flex;justify-content:space-between;align-items:center;padding:12px;" data-r="${r.id}">
+      <div>
+        <b>${escapeHtml(r.name)}</b>
+        <div style="font-size:.78rem;color:var(--text-dim);">${escapeHtml(r.timeSig)} · Önerilen ${r.bpmSuggest} BPM</div>
+        <div class="rhythm-visual" style="justify-content:flex-start;">${r.pattern.map(p=>`<span>${p==='D'?'↓':p==='U'?'↑':p==='DU'?'↓↑':p==='UU'?'↑↑':'–'}</span>`).join('')}</div>
+      </div>
+      <button class="btn icon playR" data-rp="${r.id}">▶</button>
+    </div>`).join('');
+  $$('.playR').forEach(btn=> btn.onclick=(e)=>{
+    e.stopPropagation();
+    const r = State.rhythms.find(x=>x.id===btn.dataset.rp);
+    previewRhythm(r);
+  });
+}
+function previewRhythm(r){
+  AudioEngine.ensure();
+  AudioEngine.setPattern(r.pattern);
+  AudioEngine.setChordShapeForStrum(getChordShape('G'));
+  AudioEngine.startMetronome(r.bpmSuggest, r.timeSig, ()=>{});
+  toast(`${r.name} çalıyor...`);
+  setTimeout(()=> AudioEngine.stopMetronome(), 4000);
+}
+$('#btnNewRhythm').addEventListener('click', openRhythmEditor);
+function openRhythmEditor(){
+  const beats = 8;
+  let pattern = new Array(beats).fill('-');
+  const modal = openModal(`
+    <h2>Yeni Ritim</h2>
+    <div class="formrow"><label>Ritim Adı</label><input type="text" id="rName" placeholder="Kendi Ritmim"></div>
+    <div class="formgrid">
+      <div class="formrow"><label>Ölçü</label><select id="rSig"><option>4/4</option><option>3/4</option><option>6/8</option><option>2/4</option><option>12/8</option></select></div>
+      <div class="formrow"><label>Önerilen BPM</label><input type="number" id="rBpm" value="100" min="40" max="240"></div>
+    </div>
+    <div class="formrow"><label>Vuruşlara tıklayın: Down → Up → Rest → Accent</label>
+      <div class="rhythm-visual" id="rPatternEdit" style="justify-content:flex-start; flex-wrap:wrap;">
+        ${pattern.map((p,i)=>`<span data-i="${i}" style="cursor:pointer;border:1px solid var(--border);border-radius:6px;padding:4px 8px;">–</span>`).join('')}
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="rPreview">▶ Dinle</button>
+      <button class="btn primary" id="rSave">Kaydet</button>
+    </div>
+  `);
+  const cycle = ['-','D','U','DU'];
+  $$('#rPatternEdit span', modal).forEach(span=>{
+    span.onclick = ()=>{
+      const i = +span.dataset.i;
+      const cur = pattern[i];
+      const next = cycle[(cycle.indexOf(cur)+1)%cycle.length];
+      pattern[i] = next;
+      span.textContent = next==='D'?'↓':next==='U'?'↑':next==='DU'?'↓↑':'–';
+    };
+  });
+  $('#rPreview', modal).onclick = ()=> previewRhythm({pattern, bpmSuggest:+$('#rBpm',modal).value, timeSig:$('#rSig',modal).value, name:'preview'});
+  $('#rSave', modal).onclick = async ()=>{
+    const name = $('#rName',modal).value.trim() || 'Yeni Ritim';
+    const r = {id:uid(), name, timeSig:$('#rSig',modal).value, bpmSuggest:+$('#rBpm',modal).value, pattern};
+    await DB.put('rhythms', r);
+    State.rhythms.push(r);
+    closeModal();
+    renderRhythmGrid();
+    toast('Ritim kaydedildi');
+  };
+}
+
+/* =========================================================================
+   SETLISTS
+   ========================================================================= */
+function renderSetlistsView(){
+  $('#setlistNames').innerHTML = State.setlists.map(sl=>`<div class="songitem ${State.currentSetlist===sl.id?'selected':''}" data-sl="${sl.id}"><div class="title">${escapeHtml(sl.name)}</div></div>`).join('') || '<div style="color:var(--text-dim);padding:10px;">Henüz setlist yok</div>';
+  $$('#setlistNames [data-sl]').forEach(n=> n.onclick=()=>{ State.currentSetlist=n.dataset.sl; renderSetlistsView(); });
+  const detail = $('#setlistDetail');
+  const sl = State.setlists.find(x=>x.id===State.currentSetlist);
+  if(!sl){ detail.innerHTML = '<div style="color:var(--text-dim);">Bir setlist seçin</div>'; return; }
+  detail.innerHTML = `<h2>${escapeHtml(sl.name)} <button class="btn icon danger" id="delSetlist">🗑️</button></h2>
+    <div id="setlistItems"></div>
+    <div style="margin-top:10px;"><button class="btn" id="btnStartPerform">🎤 Performansı Başlat</button></div>`;
+  const itemsEl = $('#setlistItems');
+  itemsEl.innerHTML = (sl.songIds||[]).map((id,i)=>{
+    const s = State.songs.find(x=>x.id===id);
+    return s ? `<div class="setlistItem" draggable="true" data-i="${i}"><span class="num">${i+1}.</span><span style="flex:1">${escapeHtml(s.title)} — ${escapeHtml(s.artist||'')}</span><button class="btn icon" data-open="${s.id}">▶</button><button class="btn icon danger" data-rm="${i}">✕</button></div>` : '';
+  }).join('') || '<div style="color:var(--text-dim);">Şarkı ekleyin</div>';
+  $$('[data-open]', itemsEl).forEach(b=> b.onclick=()=> openSong(b.dataset.open));
+  $$('[data-rm]', itemsEl).forEach(b=> b.onclick=()=>{ sl.songIds.splice(+b.dataset.rm,1); DB.put('setlists',sl); renderSetlistsView(); });
+  $('#delSetlist').onclick = async ()=>{ await DB.delete('setlists', sl.id); State.setlists = State.setlists.filter(x=>x.id!==sl.id); State.currentSetlist=null; renderSetlistsView(); };
+  $('#btnStartPerform').onclick = ()=>{ if(sl.songIds[0]) openSong(sl.songIds[0]); enterPerformanceMode(); };
+  let dragIdx=null;
+  $$('.setlistItem',itemsEl).forEach(it=>{
+    it.ondragstart = ()=> dragIdx = +it.dataset.i;
+    it.ondragover = e=> e.preventDefault();
+    it.ondrop = ()=>{
+      const to = +it.dataset.i;
+      const arr = sl.songIds; const [moved] = arr.splice(dragIdx,1); arr.splice(to,0,moved);
+      DB.put('setlists',sl); renderSetlistsView();
+    };
+  });
+}
+$('#btnNewSetlist').addEventListener('click', ()=>{
+  const name = prompt('Setlist adı:', 'Yeni Setlist');
+  if(!name) return;
+  const sl = {id:uid(), name, songIds:[]};
+  DB.put('setlists',sl); State.setlists.push(sl); State.currentSetlist=sl.id; renderSetlistsView();
+});
+function openAddToSetlistModal(song){
+  if(!State.setlists.length){
+    const name = prompt('Önce bir setlist oluşturun. İsim:', 'Setlistim');
+    if(!name) return;
+    const sl = {id:uid(), name, songIds:[song.id]};
+    DB.put('setlists',sl); State.setlists.push(sl); toast('Setlist oluşturuldu ve şarkı eklendi'); return;
+  }
+  const modal = openModal(`<h2>Setliste Ekle</h2>
+    <div id="slPick">${State.setlists.map(sl=>`<div class="songitem" data-sl="${sl.id}"><div class="title">${escapeHtml(sl.name)}</div></div>`).join('')}</div>
+    <div class="modal-actions"><button class="btn" id="cancelSl">Kapat</button></div>`);
+  $$('#slPick [data-sl]', modal).forEach(n=> n.onclick=()=>{
+    const sl = State.setlists.find(x=>x.id===n.dataset.sl);
+    sl.songIds = sl.songIds||[]; sl.songIds.push(song.id);
+    DB.put('setlists',sl); closeModal(); toast('Şarkı setliste eklendi');
+  });
+  $('#cancelSl',modal).onclick = closeModal;
+}
+
+/* =========================================================================
+   MODAL HELPERS
+   ========================================================================= */
+function openModal(innerHtml){
+  const root = $('#modalRoot');
+  root.innerHTML = `<div class="modal-backdrop" id="modalBackdrop"><div class="modal">${innerHtml}</div></div>`;
+  $('#modalBackdrop').onclick = e=>{ if(e.target.id==='modalBackdrop') closeModal(); };
+  return root;
+}
+function closeModal(){ $('#modalRoot').innerHTML=''; }
+
+/* =========================================================================
+   SONG EDITOR (Simple + Advanced ChordPro dual-mode)
+   ========================================================================= */
+function openEditor(song){
+  const isNew = !song;
+  const s = song || {id:uid(), title:'', artist:'', album:'', key:'C', bpm:100, timeSig:'4/4', capo:0, rhythmId:'basic44', genre:'', notes:'', favorite:false, tags:[], sections:[{name:'Verse',lines:[]}], chordDuration:2, tuning:'Standard E', instrument:'guitar', created:Date.now(), updated:Date.now()};
+  const workingSections = JSON.parse(JSON.stringify(s.sections));
+  const modal = openModal(`
+    <h2>${isNew?'Yeni Şarkı':'Şarkıyı Düzenle'}</h2>
+    <div class="formgrid">
+      <div class="formrow"><label>Şarkı Adı</label><input type="text" id="eTitle" value="${escapeHtml(s.title)}"></div>
+      <div class="formrow"><label>Sanatçı</label><input type="text" id="eArtist" value="${escapeHtml(s.artist)}"></div>
+      <div class="formrow"><label>Ton</label><input type="text" id="eKey" value="${escapeHtml(s.key)}" placeholder="G, Am..."></div>
+      <div class="formrow"><label>BPM</label><input type="number" id="eBpm" min="40" max="240" value="${s.bpm}"></div>
+      <div class="formrow"><label>Ölçü</label><select id="eSig">${['4/4','3/4','6/8','2/4','12/8'].map(t=>`<option ${s.timeSig===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="formrow"><label>Capo</label><select id="eCapo">${Array.from({length:13},(_,i)=>`<option value="${i}" ${s.capo===i?'selected':''}>${i}</option>`).join('')}</select></div>
+      <div class="formrow"><label>Ritim</label><select id="eRhythm">${State.rhythms.map(r=>`<option value="${r.id}" ${s.rhythmId===r.id?'selected':''}>${escapeHtml(r.name)}</option>`).join('')}</select></div>
+      <div class="formrow"><label>Kategori/Etiketler (virgülle)</label><input type="text" id="eTags" value="${escapeHtml((s.tags||[]).join(', '))}"></div>
+    </div>
+    <div class="editor-toggle">
+      <button class="btn primary" id="modeSimple">🖊 Basit Mod (Söz üzerine tıkla)</button>
+      <button class="btn" id="modeAdvanced">⚙ Gelişmiş Mod (ChordPro)</button>
+    </div>
+    <div id="pasteArea" class="formrow">
+      <label>Şarkı sözlerini buraya yapıştırın (akorsuz olabilir)</label>
+      <textarea id="ePaste" rows="4" placeholder="Bu akşam yine yalnızım..."></textarea>
+      <button class="btn" id="btnApplyPaste" style="align-self:flex-start;">Sözleri Yükle</button>
+    </div>
+    <div id="editorSimple"><div id="editorLyricArea"></div></div>
+    <div id="editorAdvanced" class="hidden"><textarea id="editorAdvancedText"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn" id="eCancel">İptal</button>
+      <button class="btn primary" id="eSave">Kaydet</button>
+    </div>
+  `);
+  function syncAdvancedFromWorking(){ $('#editorAdvancedText',modal).value = serializeChordProBody(workingSections); }
+  function syncSimpleFromWorking(){
+    $('#editorLyricArea',modal).innerHTML = workingSections.map((sec,si)=>
+      `<div class="section-title">${escapeHtml(sec.name)}</div>` +
+      sec.lines.map((line,li)=> line.units.length? `<div class="lyric-line">${line.units.map((u,ui)=>
+        `<span class="clu" data-sec="${si}" data-line="${li}" data-u="${ui}">${u.chord?`<span class="chordtag" data-chord="${escapeHtml(u.chord)}">${escapeHtml(u.chord)}</span>`:''}<span class="lyricword clickable">${escapeHtml(u.text)||'&nbsp;'}</span></span>`
+      ).join('')}</div>` : `<div class="emptyline"></div>`
+      ).join('')
+    ).join('');
+  }
+  syncAdvancedFromWorking(); syncSimpleFromWorking();
+  $('#modeSimple',modal).onclick = ()=>{ $('#editorSimple',modal).classList.remove('hidden'); $('#editorAdvanced',modal).classList.add('hidden'); syncSimpleFromWorking(); };
+  $('#modeAdvanced',modal).onclick = ()=>{
+    // pull simple edits into workingSections first (already live), then show advanced text
+    $('#editorAdvanced',modal).classList.remove('hidden'); $('#editorSimple',modal).classList.add('hidden');
+    syncAdvancedFromWorking();
+  };
+  $('#btnApplyPaste',modal).onclick = ()=>{
+    const txt = $('#ePaste',modal).value;
+    if(!txt.trim()) return;
+    const newSections = [{name:'Verse', lines: txt.split('\n').map(l=> ({raw:l, units:[{chord:null, text:l}]})) }];
+    workingSections.length=0; workingSections.push(...newSections);
+    syncSimpleFromWorking(); syncAdvancedFromWorking();
+    toast('Sözler yüklendi. Akor eklemek için kelimeye tıklayın.');
+  };
+  $('#editorLyricArea',modal).addEventListener('click', e=>{
+    const tag = e.target.closest('.chordtag');
+    const word = e.target.closest('.lyricword');
+    const clu = e.target.closest('.clu');
+    if(!clu) return;
+    const sec = +clu.dataset.sec, line = +clu.dataset.line, u = +clu.dataset.u;
+    if(tag || word){
+      const chordName = prompt('Akor gir (örn: G, Am7, D/F#) — boş bırakırsan kaldırılır:', workingSections[sec].lines[line].units[u].chord||'');
+      if(chordName===null) return;
+      workingSections[sec].lines[line].units[u].chord = chordName.trim() || null;
+      syncSimpleFromWorking(); syncAdvancedFromWorking();
+    }
+  });
+  $('#editorAdvancedText',modal).addEventListener('change', e=>{
+    const parsed = parseChordProBody(e.target.value);
+    workingSections.length=0; workingSections.push(...parsed);
+    syncSimpleFromWorking();
+  });
+  $('#eCancel',modal).onclick = closeModal;
+  $('#eSave',modal).onclick = async ()=>{
+    const title = $('#eTitle',modal).value.trim();
+    if(!title){ toast('Şarkı adı gerekli','err'); return; }
+    // ensure latest advanced text parsed if visible
+    if(!$('#editorAdvanced',modal).classList.contains('hidden')){
+      const parsed = parseChordProBody($('#editorAdvancedText',modal).value);
+      workingSections.length=0; workingSections.push(...parsed);
+    }
+    s.title=title; s.artist=$('#eArtist',modal).value.trim(); s.key=$('#eKey',modal).value.trim()||'C';
+    s.bpm=clamp(+$('#eBpm',modal).value||100,40,240); s.timeSig=$('#eSig',modal).value; s.capo=+$('#eCapo',modal).value;
+    s.rhythmId=$('#eRhythm',modal).value;
+    s.tags = $('#eTags',modal).value.split(',').map(t=>t.trim()).filter(Boolean);
+    s.sections = workingSections; s.updated = Date.now();
+    await DB.put('songs', s);
+    if(isNew) State.songs.push(s); else State.songs = State.songs.map(x=>x.id===s.id?s:x);
+    closeModal(); renderSongList(); openSong(s.id);
+    toast('Şarkı kaydedildi');
+  };
+}
+$('#btnNewSong').addEventListener('click', ()=> openEditor(null));
+async function deleteSong(s){
+  if(!confirm(`"${s.title}" silinsin mi?`)) return;
+  await DB.delete('songs', s.id);
+  State.songs = State.songs.filter(x=>x.id!==s.id);
+  State.currentSong = null;
+  showView('library'); renderSongList();
+  toast('Şarkı silindi');
+}
+
+/* Custom chord creator */
+function openCustomChordModal(prefillName){
+  const modal = openModal(`
+    <h2>Özel Akor Oluştur</h2>
+    <div class="formrow"><label>Akor Adı</label><input type="text" id="ccName" value="${escapeHtml(prefillName||'')}" placeholder="Örn: Dsus2add4"></div>
+    <div class="formrow"><label>Tel pozisyonları (E A D G B e) — soldan sağa, -1=kapalı, 0=açık</label>
+      <div style="display:flex; gap:6px;">${['E','A','D','G','B','e'].map((n,i)=>`<input type="number" id="ccF${i}" value="0" min="-1" max="15" style="width:50px;">`).join('')}</div>
+    </div>
+    <div id="ccPreview" style="margin-top:10px;"></div>
+    <div class="modal-actions">
+      <button class="btn" id="ccPreviewBtn">Önizle</button>
+      <button class="btn primary" id="ccSave">Kaydet</button>
+    </div>
+  `);
+  function readFrets(){ return Array.from({length:6},(_,i)=> +$('#ccF'+i,modal).value); }
+  $('#ccPreviewBtn',modal).onclick = ()=>{
+    const frets = readFrets();
+    const shape = {frets, fingers:fingersFromFrets(frets), baseFret:1};
+    $('#ccPreview',modal).innerHTML = renderChordSVG($('#ccName',modal).value||'?', shape, 120);
+  };
+  $('#ccSave',modal).onclick = ()=>{
+    const name = $('#ccName',modal).value.trim();
+    if(!name){ toast('Akor adı gerekli','err'); return; }
+    const frets = readFrets();
+    CHORD_SHAPES[name] = {frets, fingers:fingersFromFrets(frets)};
+    closeModal(); toast('Özel akor kaydedildi'); showChordDetail(name);
+  };
+}
+
+/* =========================================================================
+   IMPORT / EXPORT
+   ========================================================================= */
+function songToChordPro(s){
+  return `{title: ${s.title}}\n{artist: ${s.artist||''}}\n{key: ${s.key}}\n{tempo: ${s.bpm}}\n{time: ${s.timeSig}}\n{capo: ${s.capo||0}}\n\n${serializeChordProBody(s.sections)}`;
+}
+function songToTxt(s){
+  return s.sections.map(sec=> `[${sec.name}]\n`+sec.lines.map(l=> l.units.map(u=>u.text).join('')).join('\n')).join('\n\n');
+}
+function downloadFile(filename, content, mime){
+  const blob = new Blob([content], {type:mime||'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+function openExportModal(s){
+  const modal = openModal(`<h2>Dışa Aktar: ${escapeHtml(s.title)}</h2>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <button class="btn" id="expJson">📄 JSON</button>
+      <button class="btn" id="expCpro">🎼 ChordPro (.cho)</button>
+      <button class="btn" id="expTxt">📃 TXT</button>
+      <button class="btn" id="expPrint">🖨️ Yazdır / PDF</button>
+    </div>
+    <div class="modal-actions"><button class="btn" id="expClose">Kapat</button></div>`);
+  $('#expJson',modal).onclick = ()=> downloadFile(s.title+'.json', JSON.stringify(s,null,2), 'application/json');
+  $('#expCpro',modal).onclick = ()=> downloadFile(s.title+'.cho', songToChordPro(s), 'text/plain');
+  $('#expTxt',modal).onclick = ()=> downloadFile(s.title+'.txt', songToTxt(s), 'text/plain');
+  $('#expPrint',modal).onclick = ()=> printSong(s);
+  $('#expClose',modal).onclick = closeModal;
+}
+function printSong(s){
+  const w = window.open('', '_blank');
+  const body = s.sections.map(sec=> `<h3>${escapeHtml(sec.name)}</h3><pre style="font-family:inherit;white-space:pre-wrap;">${
+    sec.lines.map(l=> l.units.map(u=> (u.chord?`<b style="color:#c2410c">[${escapeHtml(u.chord)}]</b>`:'')+escapeHtml(u.text)).join('')).join('\n')
+  }</pre>`).join('');
+  w.document.write(`<html><head><title>${escapeHtml(s.title)}</title></head><body style="font-family:sans-serif; padding:30px;">
+    <h1>${escapeHtml(s.title)}</h1><p>${escapeHtml(s.artist||'')} — Ton: ${escapeHtml(s.key)} — Capo: ${s.capo||0} — BPM: ${s.bpm} — ${escapeHtml(s.timeSig)}</p>
+    ${body}</body></html>`);
+  w.document.close(); w.focus(); setTimeout(()=>w.print(), 400);
+}
+function openImportModal(){
+  const modal = openModal(`<h2>Şarkı İçe Aktar</h2>
+    <div class="formrow"><label>Dosya seç (.json / .cho / .txt)</label><input type="file" id="impFile" accept=".json,.cho,.txt,.chordpro"></div>
+    <div class="formrow"><label>Veya doğrudan yapıştır (ChordPro/TXT)</label><textarea id="impPaste" rows="8"></textarea></div>
+    <div class="modal-actions"><button class="btn" id="impCancel">İptal</button><button class="btn primary" id="impGo">İçe Aktar</button></div>`);
+  $('#impCancel',modal).onclick = closeModal;
+  $('#impGo',modal).onclick = async ()=>{
+    const file = $('#impFile',modal).files[0];
+    let text = $('#impPaste',modal).value;
+    if(file) text = await file.text();
+    if(!text.trim()){ toast('İçerik boş','err'); return; }
+    try{
+      let song;
+      if(text.trim().startsWith('{') && (file? file.name.endsWith('.json'): false) || (!file && text.trim().startsWith('{') && text.includes('"sections"'))){
+        const obj = JSON.parse(text);
+        song = makeSong({title:obj.title||'İçe Aktarılan', artist:obj.artist, key:obj.key||'C', bpm:obj.bpm||100, timeSig:obj.timeSig||'4/4', capo:obj.capo||0, body:''});
+        song.sections = obj.sections || song.sections;
+      } else {
+        // ChordPro or TXT
+        const titleM = text.match(/\{title:\s*([^}]+)\}/i);
+        const artistM = text.match(/\{artist:\s*([^}]+)\}/i);
+        const keyM = text.match(/\{key:\s*([^}]+)\}/i);
+        const tempoM = text.match(/\{tempo:\s*([^}]+)\}/i);
+        const timeM = text.match(/\{time:\s*([^}]+)\}/i);
+        const capoM = text.match(/\{capo:\s*([^}]+)\}/i);
+        song = makeSong({
+          title: (titleM?titleM[1]:'İçe Aktarılan').trim(), artist:(artistM?artistM[1]:'').trim(),
+          key:(keyM?keyM[1]:'C').trim(), bpm: tempoM?+tempoM[1]:100, timeSig:(timeM?timeM[1]:'4/4').trim(), capo: capoM?+capoM[1]:0,
+          body: text
+        });
+      }
+      song.id = uid(); song.created=Date.now(); song.updated=Date.now();
+      await DB.put('songs', song); State.songs.push(song);
+      closeModal(); renderSongList(); openSong(song.id);
+      toast('Şarkı içe aktarıldı');
+    }catch(err){
+      console.error(err); toast('İçe aktarma hatası: dosya bozuk olabilir','err');
+    }
+  };
+}
+
+/* =========================================================================
+   SETTINGS
+   ========================================================================= */
+function applySettingsToUI(){
+  document.documentElement.setAttribute('data-theme', State.settings.theme==='light' ? '' : State.settings.theme);
+  if(State.settings.theme==='light') document.documentElement.removeAttribute('data-theme');
+  document.body.style.setProperty('--font-lyrics', State.settings.fontSize+'rem');
+  document.body.style.setProperty('--font-chord', (State.settings.chordSize)+'rem');
+  AudioEngine.setVolume(State.settings.volume);
+}
+function openSettingsModal(){
+  const st = State.settings;
+  const modal = openModal(`<h2>⚙️ Ayarlar</h2>
+    <div class="formgrid">
+      <div class="formrow"><label>Tema</label><select id="sTheme">
+        <option value="light" ${st.theme==='light'?'selected':''}>☀ Açık</option>
+        <option value="dark" ${st.theme==='dark'?'selected':''}>🌙 Koyu</option>
+        <option value="stage" ${st.theme==='stage'?'selected':''}>🎸 Sahne</option>
+      </select></div>
+      <div class="formrow"><label>Yazı Boyutu</label><input type="range" id="sFont" min="0.85" max="2" step="0.05" value="${st.fontSize}"></div>
+      <div class="formrow"><label>Akor Boyutu</label><input type="range" id="sChord" min="0.8" max="1.8" step="0.05" value="${st.chordSize}"></div>
+      <div class="formrow"><label>Varsayılan BPM</label><input type="number" id="sBpm" value="${st.defaultBpm}" min="40" max="240"></div>
+      <div class="formrow"><label>Varsayılan Ritim</label><select id="sRhythm">${State.rhythms.map(r=>`<option value="${r.id}" ${st.defaultRhythm===r.id?'selected':''}>${escapeHtml(r.name)}</option>`).join('')}</select></div>
+      <div class="formrow"><label>Ses Seviyesi</label><input type="range" id="sVol" min="0" max="1" step="0.05" value="${st.volume}"></div>
+      <div class="formrow"><label><input type="checkbox" id="sDiagrams" ${st.showDiagrams?'checked':''}> Akor diyagramı göster</label></div>
+      <div class="formrow"><label><input type="checkbox" id="sAnim" ${st.animations?'checked':''}> Animasyonlar</label></div>
+      <div class="formrow"><label><input type="checkbox" id="sLefty" ${st.lefty?'checked':''}> Solak gitar</label></div>
+    </div>
+    <hr>
+    <div class="formrow"><label>Veri Yedekleme</label>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" id="btnBackupAll">💾 Tümünü Yedekle (JSON)</button>
+        <button class="btn" id="btnRestore">📥 Yedek Yükle</button>
+        <input type="file" id="restoreFile" accept=".json" class="hidden">
+        <button class="btn" id="btnImportSong">📄 Şarkı İçe Aktar</button>
+      </div>
+    </div>
+    <div class="modal-actions"><button class="btn" id="sClose">Kapat</button><button class="btn primary" id="sSave">Kaydet</button></div>`);
+  $('#sSave',modal).onclick = ()=>{
+    st.theme=$('#sTheme',modal).value; st.fontSize=+$('#sFont',modal).value; st.chordSize=+$('#sChord',modal).value;
+    st.defaultBpm=+$('#sBpm',modal).value; st.defaultRhythm=$('#sRhythm',modal).value; st.volume=+$('#sVol',modal).value;
+    st.showDiagrams=$('#sDiagrams',modal).checked; st.animations=$('#sAnim',modal).checked; st.lefty=$('#sLefty',modal).checked;
+    saveSettings(); applySettingsToUI(); closeModal();
+    if(State.currentSong) renderLyrics();
+    toast('Ayarlar kaydedildi');
+  };
+  $('#sClose',modal).onclick = closeModal;
+  $('#btnBackupAll',modal).onclick = async ()=>{
+    const data = { songs: await DB.getAll('songs'), setlists: await DB.getAll('setlists'), rhythms: await DB.getAll('rhythms'), settings: State.settings, exportedAt: new Date().toISOString() };
+    downloadFile('chordstage-yedek.json', JSON.stringify(data,null,2), 'application/json');
+  };
+  $('#btnRestore',modal).onclick = ()=> $('#restoreFile',modal).click();
+  $('#restoreFile',modal).onchange = async e=>{
+    const file = e.target.files[0]; if(!file) return;
+    try{
+      const data = JSON.parse(await file.text());
+      if(data.songs) for(const s of data.songs) await DB.put('songs', s);
+      if(data.setlists) for(const sl of data.setlists) await DB.put('setlists', sl);
+      if(data.rhythms) for(const r of data.rhythms) await DB.put('rhythms', r);
+      await loadAll();
+      renderSongList(); closeModal();
+      toast('Yedek başarıyla yüklendi');
+    }catch(err){ console.error(err); toast('Yedek dosyası okunamadı','err'); }
+  };
+  $('#btnImportSong',modal).onclick = ()=>{ closeModal(); openImportModal(); };
+}
+$('#btnSettings').addEventListener('click', openSettingsModal);
+
+/* =========================================================================
+   PERFORMANCE MODE + FULLSCREEN
+   ========================================================================= */
+function enterPerformanceMode(){
+  document.body.classList.add('performance');
+  if(!State.settings.theme || State.settings.theme==='light') document.documentElement.setAttribute('data-theme','stage');
+  toast('Performans modu. Çıkmak için F veya ESC.');
+}
+function exitPerformanceMode(){
+  document.body.classList.remove('performance');
+  applySettingsToUI();
+}
+$('#btnPerformance').addEventListener('click', ()=>{
+  if(document.body.classList.contains('performance')) exitPerformanceMode();
+  else { if(!State.currentSong){ toast('Önce bir şarkı açın','err'); return;} enterPerformanceMode(); }
+});
+function toggleFullscreen(){
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen().catch(()=>{});
+}
+
+/* =========================================================================
+   KEYBOARD SHORTCUTS
+   ========================================================================= */
+document.addEventListener('keydown', e=>{
+  if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
+  if(!State.currentSong) return;
+  switch(e.key){
+    case ' ': e.preventDefault(); togglePlay(); break;
+    case 'ArrowUp': State.currentSong.bpm=clamp(State.currentSong.bpm+1,40,240); DB.put('songs',State.currentSong); renderSongHeader(); renderTransport(); break;
+    case 'ArrowDown': State.currentSong.bpm=clamp(State.currentSong.bpm-1,40,240); DB.put('songs',State.currentSong); renderSongHeader(); renderTransport(); break;
+    case 'ArrowLeft': stepChord(-1); break;
+    case 'ArrowRight': stepChord(1); break;
+    case 'f': case 'F': toggleFullscreen(); break;
+    case 'Escape': if(document.body.classList.contains('performance')) exitPerformanceMode(); break;
+    case 't': case 'T': State.transpose=clamp(State.transpose+1,-11,11); renderSongHeader(); renderLyrics(); buildTimeline(); break;
+    case 'm': case 'M': togglePlay(); break;
+  }
+});
+
+/* =========================================================================
+   MOBILE NAV
+   ========================================================================= */
+function closeSidebarMobile(){ $('#sidebar').classList.remove('open'); $('#sidebarScrim').classList.remove('show'); }
+$('#menuToggle').addEventListener('click', ()=>{ $('#sidebar').classList.toggle('open'); $('#sidebarScrim').classList.toggle('show'); });
+$('#sidebarScrim').addEventListener('click', closeSidebarMobile);
+$('#rightScrim').addEventListener('click', ()=>{ $('#rightpanel').classList.remove('open'); $('#rightScrim').classList.remove('show'); });
+
+/* =========================================================================
+   INIT
+   ========================================================================= */
+(async function init(){
+  try{
+    await loadAll();
+    renderSongList();
+    showView('library');
+  }catch(err){
+    console.error(err);
+    toast('Veritabanı yüklenemedi: '+err.message, 'err');
+  }
+})();
+</script>
+</body>
+</html>
