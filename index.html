@@ -56,7 +56,10 @@ a{color:var(--accent);}
 #topbar{
   display:flex; align-items:center; gap:8px; padding:8px 12px;
   background:var(--bg-elev); border-bottom:1px solid var(--border); flex-shrink:0; z-index:50;
+  overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none;
 }
+#topbar::-webkit-scrollbar{display:none;}
+#topbar > *{flex-shrink:0;}
 #topbar .logo{font-weight:800; font-size:1.05rem; display:flex; align-items:center; gap:6px;}
 #topbar .spacer{flex:1;}
 #menuToggle{display:none;}
@@ -235,6 +238,8 @@ body.performance #songHeader h1{font-size:2rem;}
   #rightpanel.open{transform:translateX(0);}
   #menuToggle{display:flex;}
   .navbtn span.label{display:none;}
+  .navbtn{min-width:42px; padding:8px 6px;}
+  #topbar .logo .logo-text{display:none;}
   #sidebarScrim,#rightScrim{display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:90;}
   #sidebarScrim.show,#rightScrim.show{display:block;}
 }
@@ -248,7 +253,7 @@ body.performance #songHeader h1{font-size:2rem;}
 
 <div id="topbar">
   <button class="btn icon" id="menuToggle" title="Menü">☰</button>
-  <div class="logo">🎸 ChordStage</div>
+  <div class="logo">🎸 <span class="logo-text">ChordStage</span></div>
   <button class="navbtn active" data-view="library"><span class="ic">🏠</span><span class="label">Ana Sayfa</span></button>
   <button class="navbtn" data-view="chordlib"><span class="ic">🎼</span><span class="label">Akorlar</span></button>
   <button class="navbtn" data-view="rhythmlib"><span class="ic">🥁</span><span class="label">Ritimler</span></button>
@@ -277,9 +282,11 @@ body.performance #songHeader h1{font-size:2rem;}
 
   <div id="main">
     <div id="center">
-      <div id="viewLibraryEmpty" style="flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; color:var(--text-dim);">
+      <div id="viewLibraryEmpty" style="flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px; color:var(--text-dim); padding:20px; text-align:center;">
         <div style="font-size:3rem;">🎵</div>
         <div>Başlamak için soldan bir şarkı seç ya da yeni şarkı oluştur.</div>
+        <button class="btn primary" id="btnNewSongEmpty">➕ Yeni Şarkı Ekle</button>
+        <button class="btn" id="btnOpenLibraryEmpty">📚 Şarkı Kütüphanesini Aç</button>
       </div>
 
       <div id="viewSong" class="hidden" style="display:flex; flex-direction:column; flex:1; min-height:0;">
@@ -1844,6 +1851,8 @@ function openEditor(song){
   };
 }
 $('#btnNewSong').addEventListener('click', ()=> openEditor(null));
+$('#btnNewSongEmpty').addEventListener('click', ()=> openEditor(null));
+$('#btnOpenLibraryEmpty').addEventListener('click', ()=>{ $('#sidebar').classList.add('open'); $('#sidebarScrim').classList.add('show'); });
 async function deleteSong(s){
   if(!confirm(`"${s.title}" silinsin mi?`)) return;
   await DB.delete('songs', s.id);
