@@ -185,7 +185,11 @@ a{color:var(--accent);}
 .formrow{display:flex; flex-direction:column; gap:4px; margin-bottom:12px;}
 .formrow label{font-size:.78rem; color:var(--text-dim); font-weight:600;}
 .formgrid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
-.modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:16px;}
+.modal-actions{
+  display:flex; justify-content:flex-end; gap:8px; margin-top:16px;
+  position:sticky; bottom:-20px; margin-left:-20px; margin-right:-20px;
+  padding:12px 20px 20px; background:var(--bg-elev); border-top:1px solid var(--border); z-index:5;
+}
 
 /* chord picker popover */
 #chordPicker{
@@ -1427,7 +1431,16 @@ function highlightChordAt(idx){
   if(!seg) return;
   const sel = `.clu[data-sec="${seg.sec}"][data-line="${seg.line}"][data-u="${seg.u}"]`;
   const node = $(sel);
-  if(node){ node.classList.add('playing-chord'); if(State.player.autoScrollSpeed>0) node.scrollIntoView({block:'center', behavior:'smooth'}); }
+  if(node){
+    node.classList.add('playing-chord');
+    State.player.activeNode = node;
+    // While actively playing, the continuous per-frame follow in autoScrollStep() handles
+    // scrolling (a competing scrollIntoView here would fight it and stall/jank the scroll).
+    // For manual navigation (paused), jump straight to it.
+    if(!State.player.playing && State.player.autoScrollSpeed>0) node.scrollIntoView({block:'center', behavior:'smooth'});
+  } else {
+    State.player.activeNode = null;
+  }
   const nextSeg = State.player.timeline[idx+1];
   if(nextSeg){
     const nsel = `.clu[data-sec="${nextSeg.sec}"][data-line="${nextSeg.line}"][data-u="${nextSeg.u}"]`;
@@ -1435,14 +1448,23 @@ function highlightChordAt(idx){
   }
   const tlSeg = $(`.tl-seg[data-idx="${idx}"]`); if(tlSeg) tlSeg.classList.add('active');
 }
-let lastAutoScroll = 0;
 function autoScrollStep(){
-  const now = performance.now();
-  if(now-lastAutoScroll < 40) return;
-  lastAutoScroll = now;
+  // Continuously eases the view toward the active chord/line's position instead of
+  // scrolling at a fixed pixel rate. A fixed rate falls behind on fast/dense songs and
+  // the part the user needs to see slides off-screen; easing toward the actual target
+  // position every frame means it always catches up, just faster or slower per the
+  // speed setting, and it never fights with any other scroll call.
+  const node = State.player.activeNode;
+  if(!node) return;
   const wrap = $('#lyricsWrap');
-  const speedFactor = (State.player.autoScrollSpeed||100)/100;
-  wrap.scrollTop += 0.35*speedFactor;
+  const wrapRect = wrap.getBoundingClientRect();
+  const nodeRect = node.getBoundingClientRect();
+  const targetY = wrapRect.top + wrapRect.height*0.32;
+  const delta = nodeRect.top - targetY;
+  if(Math.abs(delta) < 2) return;
+  const speedFactor = clamp((State.player.autoScrollSpeed||100)/100, 0.1, 3);
+  const ease = clamp(0.14*speedFactor, 0.03, 0.6);
+  wrap.scrollTop += delta*ease;
 }
 function seekToIndex(i){
   const tl = State.player.timeline;
