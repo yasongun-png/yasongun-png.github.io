@@ -112,20 +112,23 @@ a{color:var(--accent);}
   font-weight:700; margin-bottom:6px; border-left:3px solid var(--accent); padding-left:8px;
 }
 .lyric-line{
-  display:flex; flex-wrap:wrap; align-items:flex-end; line-height:2.6em;
-  font-size:var(--font-lyrics); margin-bottom:2px; min-height:2.6em;
+  display:block; line-height:1.5; font-size:var(--font-lyrics); margin-bottom:0; padding-top:1.9em;
 }
-.clu{position:relative; display:inline-block; padding-top:1.3em; margin-right:2px; white-space:pre-wrap;}
+.clu{position:relative; display:inline-block; vertical-align:bottom; margin-right:2px; white-space:normal;}
+.clu .lyricword{white-space:pre-wrap;}
 .clu .chordtag{
-  position:absolute; top:0; left:0; color:var(--chord); font-weight:700; font-size:var(--font-chord);
-  cursor:pointer; user-select:none; padding:1px 3px; border-radius:4px; white-space:nowrap;
+  position:absolute; top:-1.7em; left:0; color:var(--chord); background:var(--chord-bg); font-weight:800;
+  font-size:var(--font-chord); line-height:1; cursor:pointer; user-select:none; padding:2px 6px; border-radius:5px;
+  white-space:nowrap; border:1px solid var(--chord-bg); box-shadow:0 1px 2px rgba(0,0,0,.08); z-index:2;
 }
-.clu .chordtag:hover{background:var(--chord-bg);}
+.clu .chordtag:hover{filter:brightness(1.1);}
 .clu .lyricword{cursor:text;}
 .clu .lyricword.clickable{cursor:pointer; border-bottom:1px dashed transparent;}
 .clu .lyricword.clickable:hover{border-bottom:1px dashed var(--accent);}
-.clu.playing-chord .chordtag{background:var(--active); color:#fff; font-size:1.15em; padding:2px 6px;}
-.clu.upcoming-chord .chordtag{background:var(--upcoming); color:#000;}
+.clu.playing-chord{z-index:3;}
+.clu.playing-chord .chordtag{background:var(--active); color:#fff; border-color:var(--active); font-size:1.3em; padding:3px 9px; transform:translateY(-2px); box-shadow:0 3px 8px rgba(0,0,0,.25);}
+.clu.playing-chord .lyricword{font-weight:800; text-decoration:underline; text-decoration-color:var(--active); text-decoration-thickness:3px; text-underline-offset:4px;}
+.clu.upcoming-chord .chordtag{background:var(--upcoming); color:#000; border-color:var(--upcoming);}
 .emptyline{height:1.2em;}
 
 /* ---------- Now playing strip ---------- */
@@ -1136,10 +1139,7 @@ function renderLyrics(){
       }
       const clus = line.units.map((u,ui)=>{
         const words = u.text.length ? escapeHtml(u.text) : '&nbsp;';
-        return `<span class="clu" data-sec="${si}" data-line="${li}" data-u="${ui}">
-          ${u.chord?`<span class="chordtag" data-chord="${escapeHtml(u.chord)}">${escapeHtml(u.chord)}</span>`:''}
-          <span class="lyricword clickable" data-sec="${si}" data-line="${li}" data-u="${ui}">${words}</span>
-        </span>`;
+        return `<span class="clu" data-sec="${si}" data-line="${li}" data-u="${ui}">${u.chord?`<span class="chordtag" data-chord="${escapeHtml(u.chord)}">${escapeHtml(u.chord)}</span>`:''}<span class="lyricword clickable" data-sec="${si}" data-line="${li}" data-u="${ui}">${words}</span></span>`;
       }).join('');
       return `<div class="lyric-line">${clus}</div>`;
     }).join('');
