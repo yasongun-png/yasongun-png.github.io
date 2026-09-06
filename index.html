@@ -218,11 +218,6 @@ a{color:var(--accent);}
   padding:12px 20px 20px; background:var(--bg-elev); border-top:1px solid var(--border); z-index:5;
 }
 
-/* measure editor: tap a word to place/remove a barline right after it */
-.measure-word{cursor:pointer; padding:2px 1px; border-radius:3px;}
-.measure-word:hover{background:var(--bg-elev);}
-.measure-word.measure-end{border-right:3px solid var(--danger); margin-right:4px; padding-right:5px;}
-
 /* chord picker popover */
 #chordPicker{
   position:fixed; z-index:300; background:var(--bg-elev); border:1px solid var(--border); border-radius:10px;
@@ -1348,7 +1343,7 @@ function renderSongHeader(){
       <div class="editbtns" style="display:flex; gap:6px; flex-wrap:wrap;">
         <button class="btn icon" id="btnFavToggle" title="Favori">${s.favorite?'★':'☆'}</button>
         ${State.isAdmin?'<button class="btn icon" id="btnEditSong" title="Düzenle">✏️</button>':''}
-        ${State.isAdmin?'<button class="btn icon" id="btnTimingEditor" title="Ölçü Editörü">📐</button>':''}
+        ${State.isAdmin?'<button class="btn icon" id="btnTimingEditor" title="Akorlar Arası Süre">⏱</button>':''}
         <button class="btn icon" id="btnExportSong" title="Dışa Aktar">📤</button>
         <button class="btn icon" id="btnPrintSong" title="Yazdır / PDF">🖨️</button>
         <button class="btn icon" id="btnAddToSetlist" title="Setliste ekle">📋</button>
@@ -1580,57 +1575,28 @@ function flattenWordUnits(sections){
   })));
   return flat;
 }
-// A chord doesn't have some universal fixed length of its own — how long it holds depends on
-// where in the actual sung phrase the next chord change falls. So instead of a per-chord
-// duration, the real unit of time here is the *measure* (fixed by the time signature, e.g. 4
-// beats for 4/4), and what the admin controls is which WORD each measure ends on (via the
-// measure editor). Chords are then placed in time by their position among the words inside
-// their measure, not by any per-chord rule.
-function computeMeasureTimeline(s, sections, boundaries){
-  const beatsPerMeasure = parseFloat(s.timeSig) || 4;
-  const secondsPerBeat = 60/s.bpm;
-  const measureDuration = beatsPerMeasure*secondsPerBeat;
-  const flat = flattenWordUnits(sections);
-  const boundarySet = new Set((boundaries||[]).map(b=>`${b.sec}-${b.line}-${b.u}`));
-  const measures = [];
-  let current = [];
-  flat.forEach(w=>{
-    current.push(w);
-    if(boundarySet.has(`${w.sec}-${w.line}-${w.u}`)){ measures.push(current); current = []; }
-  });
-  if(current.length) measures.push(current);
-  const timeline = [];
-  measures.forEach((words,mi)=>{
-    const measureStart = mi*measureDuration;
-    const n = words.length;
-    words.forEach((w,pi)=>{
-      if(w.chord){
-        timeline.push({t: measureStart + (n>0 ? (pi/n)*measureDuration : 0), chord:w.chord, sec:w.sec, line:w.line, u:w.u});
-      }
-    });
-  });
-  return {timeline, duration: measures.length*measureDuration};
-}
+// The editor's only job: how many beats hold between this chord and the next one. Each chord
+// occurrence gets its own gap (song.chordGaps, in sequence order) instead of one rule applied
+// to the whole song.
 function buildTimeline(){
   const s = State.currentSong;
   const sections = effectiveSections();
-  let timeline, duration;
-  if(s.measureEndUnits && s.measureEndUnits.length){
-    ({timeline, duration} = computeMeasureTimeline(s, sections, s.measureEndUnits));
-  } else {
-    // No measure markers set yet: fall back to a flat, evenly-spaced guess (old behavior) so
-    // playback/highlighting still works reasonably before the song's measures are marked up.
-    const secondsPerBeat = 60/s.bpm;
-    const defaultBeats = s.chordDuration || 2;
-    let t = 0;
-    timeline = [];
-    flattenWordUnits(sections).forEach(fu=>{
-      if(fu.chord){ timeline.push({t, chord:fu.chord, sec:fu.sec, line:fu.line, u:fu.u}); t += defaultBeats*secondsPerBeat; }
-    });
-    duration = t;
-  }
+  const secondsPerBeat = 60/s.bpm;
+  const defaultBeats = s.chordDuration || 2;
+  const gaps = s.chordGaps || [];
+  let t = 0;
+  const timeline = [];
+  let chordIdx = 0;
+  flattenWordUnits(sections).forEach(fu=>{
+    if(fu.chord){
+      const beats = gaps[chordIdx]!=null ? gaps[chordIdx] : defaultBeats;
+      timeline.push({t, chord:fu.chord, sec:fu.sec, line:fu.line, u:fu.u, beats});
+      t += beats*secondsPerBeat;
+      chordIdx++;
+    }
+  });
   State.player.timeline = timeline;
-  State.player.duration = duration;
+  State.player.duration = t;
   renderChordFlow(-1);
   renderTimelineBar();
 }
@@ -1801,68 +1767,64 @@ $('#lyricsWrap').addEventListener('pointerdown', ()=>{
    ========================================================================= */
 function openMeasureEditor(){
   const s = State.currentSong;
-  const sections = effectiveSections();
-  let boundaries = (s.measureEndUnits||[]).map(b=>({sec:b.sec,line:b.line,u:b.u}));
-  const beatsPerMeasure = parseFloat(s.timeSig) || 4;
-  function isBoundary(sec,line,u){ return boundaries.some(b=>b.sec===sec&&b.line===line&&b.u===u); }
-  function toggleBoundary(sec,line,u){
-    const idx = boundaries.findIndex(b=>b.sec===sec&&b.line===line&&b.u===u);
-    if(idx>=0) boundaries.splice(idx,1); else boundaries.push({sec,line,u});
-    boundaries.sort((a,b)=> a.sec-b.sec || a.line-b.line || a.u-b.u);
-  }
+  buildTimeline();
+  const chords = State.player.timeline.map(seg=>({chord:seg.chord, beats:seg.beats}));
+  if(!chords.length){ toast('Bu şarkıda henüz akor yok','err'); return; }
   const modal = openModal(`
-    <h2>📐 Ölçü Editörü</h2>
+    <h2>⏱ Akorlar Arası Süre</h2>
     <div style="font-size:.8rem;color:var(--text-dim);margin-bottom:10px;">
-      Bir kelimeye dokunarak orada bir ölçü çizgisi (${escapeHtml(s.timeSig)}) yerleştirin ya da kaldırın. Akorların kendine ait bir süresi yoktur — her ölçü hep aynı uzunluktadır (${beatsPerMeasure} vuruş); akorlar, o ölçünün sözlerine göre neredeyse zamanda da orada çalar.
+      Her akorun yanındaki sayı, o akordan sonra sıradaki akora geçilene kadar kaç vuruş beklenecegini belirler. Editör sadece bunu ayarlar: iki akor arasındaki süre.
     </div>
-    <div id="measureLyrics" style="max-height:52vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:12px; background:var(--bg-elev2); line-height:2.1;"></div>
-    <div style="margin-top:8px; font-size:.8rem; color:var(--text-dim);">Ölçü sayısı: <b id="measureCount">0</b> · Tahmini süre: <b id="measureDur">0</b> sn · BPM: ${s.bpm}</div>
+    <div id="gapList" style="max-height:52vh; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
+    <div style="margin-top:8px; font-size:.8rem; color:var(--text-dim);">Toplam: <b id="gapTotalBeats">0</b> vuruş (~<span id="gapTotalSec">0</span> sn) · BPM: ${s.bpm}</div>
     <div class="modal-actions" style="justify-content:space-between;">
-      <button class="btn" id="measureClear">Tüm Çizgileri Temizle</button>
+      <button class="btn" id="gapReset">Sıfırla</button>
       <div style="display:flex; gap:8px;">
-        <button class="btn" id="measurePreview">▶ Önizle</button>
-        <button class="btn" id="measureCancel">İptal</button>
-        <button class="btn primary" id="measureSave">Kaydet</button>
+        <button class="btn" id="gapPreview">▶ Önizle</button>
+        <button class="btn" id="gapCancel">İptal</button>
+        <button class="btn primary" id="gapSave">Kaydet</button>
       </div>
     </div>
   `);
   function render(){
-    const el = $('#measureLyrics', modal);
-    el.innerHTML = sections.map((sec,si)=>
-      `<div class="section-title">${escapeHtml(sec.name)}</div>` +
-      sec.lines.map((line,li)=> line.units.length ? `<div>${line.units.map((u,ui)=>{
-        const chordPart = u.chord ? `<b style="color:var(--chord)">${escapeHtml(u.chord)}</b>` : '';
-        const b = isBoundary(si,li,ui);
-        return `${chordPart}<span class="measure-word ${b?'measure-end':''}" data-sec="${si}" data-line="${li}" data-u="${ui}">${escapeHtml(u.text)||' '}</span>`;
-      }).join('')}</div>` : ''
-      ).join('')
-    ).join('');
-    const {duration} = computeMeasureTimeline(s, sections, boundaries);
-    $('#measureCount',modal).textContent = boundaries.length + 1;
-    $('#measureDur',modal).textContent = duration.toFixed(1);
+    const el = $('#gapList', modal);
+    el.innerHTML = chords.map((c,i)=> `
+      <div style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--bg-elev2); border-radius:8px;">
+        <b style="color:var(--chord); min-width:48px;">${escapeHtml(c.chord)}</b>
+        <span style="color:var(--text-dim); font-size:.8rem;">→ sıradakine kadar</span>
+        <div style="flex:1;"></div>
+        <button class="btn icon gapMinus" data-i="${i}" style="min-width:32px; min-height:32px; padding:4px;">–</button>
+        <span style="min-width:56px; text-align:center; font-weight:700;">${c.beats} vuruş</span>
+        <button class="btn icon gapPlus" data-i="${i}" style="min-width:32px; min-height:32px; padding:4px;">+</button>
+      </div>`).join('');
+    const totalBeats = chords.reduce((a,c)=>a+c.beats,0);
+    $('#gapTotalBeats',modal).textContent = Math.round(totalBeats*100)/100;
+    $('#gapTotalSec',modal).textContent = (totalBeats*60/s.bpm).toFixed(1);
   }
   render();
-  $('#measureLyrics',modal).addEventListener('click', e=>{
-    const word = e.target.closest('.measure-word');
-    if(!word) return;
-    toggleBoundary(+word.dataset.sec, +word.dataset.line, +word.dataset.u);
+  $('#gapList',modal).addEventListener('click', e=>{
+    const minus = e.target.closest('.gapMinus');
+    const plus = e.target.closest('.gapPlus');
+    if(!minus && !plus) return;
+    const i = +(minus||plus).dataset.i;
+    chords[i].beats = clamp(chords[i].beats + (plus?0.25:-0.25), 0.25, 32);
     render();
   });
-  $('#measureClear',modal).onclick = ()=>{ boundaries = []; render(); };
-  $('#measurePreview',modal).onclick = ()=>{
-    s.measureEndUnits = boundaries;
+  $('#gapReset',modal).onclick = ()=>{ chords.forEach(c=> c.beats = s.chordDuration||2); render(); };
+  $('#gapPreview',modal).onclick = ()=>{
+    s.chordGaps = chords.map(c=>c.beats);
     buildTimeline();
     closeModal();
     startPlayback();
   };
-  $('#measureCancel',modal).onclick = ()=>{ buildTimeline(); closeModal(); };
-  $('#measureSave',modal).onclick = async ()=>{
-    s.measureEndUnits = boundaries;
+  $('#gapCancel',modal).onclick = ()=>{ buildTimeline(); closeModal(); };
+  $('#gapSave',modal).onclick = async ()=>{
+    s.chordGaps = chords.map(c=>c.beats);
     s.updated = Date.now();
     await DB.put('songs', s);
     buildTimeline();
     closeModal();
-    toast('Ölçüler kaydedildi');
+    toast('Akor süreleri kaydedildi');
   };
 }
 
