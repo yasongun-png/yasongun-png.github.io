@@ -46,6 +46,7 @@ input,select,textarea{font-family:inherit;}
 .btn.icon{padding:8px; min-width:38px;}
 .btn:disabled{opacity:.4; cursor:not-allowed;}
 .hidden{display:none !important;}
+body:not(.is-admin) .admin-only{display:none !important;}
 input[type=text],input[type=number],input[type=search],textarea,select{
   background:var(--bg-elev); color:var(--text); border:1px solid var(--border);
   border-radius:8px; padding:8px 10px; font-size:.9rem;
@@ -259,7 +260,7 @@ body.performance #songHeader h1{font-size:2rem;}
   <button class="navbtn" data-view="rhythmlib"><span class="ic">🥁</span><span class="label">Ritimler</span></button>
   <button class="navbtn" data-view="setlists"><span class="ic">📋</span><span class="label">Setlist</span></button>
   <div class="spacer"></div>
-  <button class="btn icon" id="btnNewSong" title="Yeni Şarkı">➕</button>
+  <button class="btn icon admin-only" id="btnNewSong" title="Yeni Şarkı">➕</button>
   <button class="btn icon" id="btnPerformance" title="Performans Modu">🎤</button>
   <button class="btn icon" id="btnSettings" title="Ayarlar">⚙️</button>
 </div>
@@ -284,8 +285,8 @@ body.performance #songHeader h1{font-size:2rem;}
     <div id="center">
       <div id="viewLibraryEmpty" style="flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px; color:var(--text-dim); padding:20px; text-align:center;">
         <div style="font-size:3rem;">🎵</div>
-        <div>Başlamak için soldan bir şarkı seç ya da yeni şarkı oluştur.</div>
-        <button class="btn primary" id="btnNewSongEmpty">➕ Yeni Şarkı Ekle</button>
+        <div>Başlamak için soldan bir şarkı seç<span class="admin-only"> ya da yeni şarkı oluştur</span>.</div>
+        <button class="btn primary admin-only" id="btnNewSongEmpty">➕ Yeni Şarkı Ekle</button>
         <button class="btn" id="btnOpenLibraryEmpty">📚 Şarkı Kütüphanesini Aç</button>
       </div>
 
@@ -1035,6 +1036,31 @@ const AudioEngine = (()=>{
 })();
 
 /* =========================================================================
+   ADMIN GATE
+   This app has no backend, so "admin" cannot be a real security boundary —
+   anyone with devtools can bypass a client-side check. It's a soft lock so
+   casual visitors on this site don't see or trigger song add/edit/delete
+   controls; only someone who knows the passcode does. Songs everyone sees
+   come from the published songs-data.json (see loadAll) which only the
+   admin updates by using the "Yayınla" export in Settings.
+   ========================================================================= */
+const ADMIN_PASSWORD_HASH = '26745bd3ca43f69fc7a7da631158f09058e567925b88cb9286205e2cf6a07b3a';
+async function sha256Hex(text){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function checkAdminPassword(pw){ return (await sha256Hex(pw)) === ADMIN_PASSWORD_HASH; }
+function setAdminMode(on){
+  State.isAdmin = on;
+  try{ if(on) localStorage.setItem('chordstage_admin','1'); else localStorage.removeItem('chordstage_admin'); }catch(e){}
+  applyAdminUI();
+}
+function applyAdminUI(){
+  document.body.classList.toggle('is-admin', !!State.isAdmin);
+  if(State.currentSong) renderSongHeader();
+}
+
+/* =========================================================================
    APP STATE
    ========================================================================= */
 const State = {
@@ -1045,14 +1071,34 @@ const State = {
   settings:{ theme:'light', fontSize:1.15, chordSize:1.0, scrollSpeed:100, defaultBpm:100, defaultRhythm:'basic44', showDiagrams:true, animations:true, lefty:false, volume:0.7 },
   transpose:0, // current display transpose (semitones), not saved to song
   selectedChord:null,
+  isAdmin:false,
   player:{ playing:false, timeline:[], startTime:0, pausedAt:0, activeIdx:-1, rafId:null, autoScroll:false, mode:'normal' /* or rehearsal */ },
 };
 
+function publishedSongToRecord(s){
+  const rec = makeSong(Object.assign({}, s, {body:''}));
+  rec.id = s.id; rec.sections = s.sections; rec.created = s.created; rec.updated = s.updated;
+  return rec;
+}
+async function fetchPublishedSongs(){
+  try{
+    const res = await fetch('songs-data.json', {cache:'no-store'});
+    if(!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data) && data.length ? data : null;
+  }catch(e){ return null; }
+}
 async function loadAll(){
+  try{ State.isAdmin = localStorage.getItem('chordstage_admin')==='1'; }catch(e){}
   let songs = await DB.getAll('songs');
   if(!songs.length){
-    for(const s of DEMO_SONGS) await DB.put('songs', s);
-    songs = DEMO_SONGS;
+    // First visit on this device: seed from the admin's published catalog if reachable,
+    // otherwise fall back to the songs baked into this file so the app still works offline
+    // or when opened straight from disk (file://, where fetch of a sibling file can fail).
+    const published = await fetchPublishedSongs();
+    const seed = published ? published.map(publishedSongToRecord) : DEMO_SONGS;
+    for(const s of seed) await DB.put('songs', s);
+    songs = seed;
   }
   State.songs = songs;
   let rhythms = await DB.getAll('rhythms');
@@ -1067,6 +1113,22 @@ async function loadAll(){
   const rec = await DB.get('meta','recent');
   if(rec) State.recentIds = rec.value;
   applySettingsToUI();
+  applyAdminUI();
+}
+async function refreshFromPublished(){
+  const published = await fetchPublishedSongs();
+  if(!published){ toast('Yayınlanan liste alınamadı (bağlantı yok olabilir)','err'); return; }
+  let added = 0;
+  for(const s of published){
+    if(!State.songs.some(existing=>existing.id===s.id)){
+      const rec = publishedSongToRecord(s);
+      await DB.put('songs', rec);
+      State.songs.push(rec);
+      added++;
+    }
+  }
+  renderSongList();
+  toast(added ? `${added} yeni şarkı eklendi` : 'Zaten güncel');
 }
 function saveSettings(){ DB.put('meta',{key:'settings', value:State.settings}); }
 function pushRecent(id){
@@ -1210,11 +1272,11 @@ function renderSongHeader(){
       </div>
       <div class="editbtns" style="display:flex; gap:6px; flex-wrap:wrap;">
         <button class="btn icon" id="btnFavToggle" title="Favori">${s.favorite?'★':'☆'}</button>
-        <button class="btn icon" id="btnEditSong" title="Düzenle">✏️</button>
+        ${State.isAdmin?'<button class="btn icon" id="btnEditSong" title="Düzenle">✏️</button>':''}
         <button class="btn icon" id="btnExportSong" title="Dışa Aktar">📤</button>
         <button class="btn icon" id="btnPrintSong" title="Yazdır / PDF">🖨️</button>
         <button class="btn icon" id="btnAddToSetlist" title="Setliste ekle">📋</button>
-        <button class="btn icon danger" id="btnDeleteSong" title="Sil">🗑️</button>
+        ${State.isAdmin?'<button class="btn icon danger" id="btnDeleteSong" title="Sil">🗑️</button>':''}
       </div>
     </div>
     <div class="infobar">
@@ -1226,11 +1288,11 @@ function renderSongHeader(){
       <span class="pill">🎼 Transpoze: <button id="transDown">–</button> <span id="transVal">${State.transpose>0?'+':''}${State.transpose}</span> <button id="transUp">+</button></span>
     </div>`;
   $('#btnFavToggle').onclick=()=>{ s.favorite=!s.favorite; DB.put('songs',s); renderSongHeader(); renderSongList(); };
-  $('#btnEditSong').onclick=()=> openEditor(s);
+  if($('#btnEditSong')) $('#btnEditSong').onclick=()=> openEditor(s);
   $('#btnExportSong').onclick=()=> openExportModal(s);
   $('#btnPrintSong').onclick=()=> printSong(s);
   $('#btnAddToSetlist').onclick=()=> openAddToSetlistModal(s);
-  $('#btnDeleteSong').onclick=()=> deleteSong(s);
+  if($('#btnDeleteSong')) $('#btnDeleteSong').onclick=()=> deleteSong(s);
   $('#bpmMinus').onclick=()=>{ s.bpm=clamp(s.bpm-1,40,240); DB.put('songs',s); renderSongHeader(); renderTransport(); };
   $('#bpmPlus').onclick=()=>{ s.bpm=clamp(s.bpm+1,40,240); DB.put('songs',s); renderSongHeader(); renderTransport(); };
   $('#capoSelect').onchange=e=>{ s.capo=parseInt(e.target.value); DB.put('songs',s); renderSongHeader(); };
@@ -1261,7 +1323,10 @@ $('#lyricsWrap').addEventListener('click', e=>{
   const chordTag = e.target.closest('.chordtag');
   if(chordTag){ showChordDetail(chordTag.dataset.chord); return; }
   const word = e.target.closest('.lyricword');
-  if(word && !State.player.playing){ openChordPickerAt(word); }
+  if(word && !State.player.playing){
+    if(!State.isAdmin){ toast('Söz/akor düzenlemek için admin girişi gerekiyor (Ayarlar)'); return; }
+    openChordPickerAt(word);
+  }
 });
 
 /* =========================================================================
@@ -2003,15 +2068,24 @@ function openSettingsModal(){
       <div class="formrow"><label><input type="checkbox" id="sLefty" ${st.lefty?'checked':''}> Solak gitar</label></div>
     </div>
     <hr>
+    <div class="formrow"><label>Şarkı Kütüphanesi</label>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" id="btnRefreshPublished">🔄 Kütüphaneyi Güncelle</button>
+        <button class="btn admin-only" id="btnImportSong">📄 Şarkı İçe Aktar</button>
+      </div>
+    </div>
+    <hr>
     <div class="formrow"><label>Veri Yedekleme</label>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn" id="btnBackupAll">💾 Tümünü Yedekle (JSON)</button>
         <button class="btn" id="btnRestore">📥 Yedek Yükle</button>
         <input type="file" id="restoreFile" accept=".json" class="hidden">
-        <button class="btn" id="btnImportSong">📄 Şarkı İçe Aktar</button>
       </div>
     </div>
+    <hr>
+    <div class="formrow" id="adminSection"></div>
     <div class="modal-actions"><button class="btn" id="sClose">Kapat</button><button class="btn primary" id="sSave">Kaydet</button></div>`);
+  renderAdminSection(modal);
   $('#sSave',modal).onclick = ()=>{
     st.theme=$('#sTheme',modal).value; st.fontSize=+$('#sFont',modal).value; st.chordSize=+$('#sChord',modal).value;
     st.defaultBpm=+$('#sBpm',modal).value; st.defaultRhythm=$('#sRhythm',modal).value; st.volume=+$('#sVol',modal).value;
@@ -2039,6 +2113,40 @@ function openSettingsModal(){
     }catch(err){ console.error(err); toast('Yedek dosyası okunamadı','err'); }
   };
   $('#btnImportSong',modal).onclick = ()=>{ closeModal(); openImportModal(); };
+  $('#btnRefreshPublished',modal).onclick = ()=> refreshFromPublished();
+}
+function renderAdminSection(modal){
+  const el = $('#adminSection', modal);
+  if(State.isAdmin){
+    el.innerHTML = `<label>Admin</label>
+      <div style="color:var(--active); font-weight:600;">✅ Admin modundasınız — şarkı ekleme/düzenleme/silme açık.</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
+        <button class="btn" id="btnPublish">🚀 Yayınla</button>
+        <button class="btn danger" id="btnAdminLogout">Admin Çıkışı</button>
+      </div>
+      <div style="font-size:.72rem; color:var(--text-dim); margin-top:4px;">
+        "Yayınla" mevcut tüm şarkılarını indirir; siteye herkese açık şekilde eklemek için o dosyayı bana göndermen (veya yapıştırman) yeterli. Telifli şarkı sözlerini herkese açık yayınlamak telif ihlali olabilir — kendi özgün/telifsiz içeriklerin dışındakileri sadece kendi cihazında sakla, yayınlama.
+      </div>`;
+    $('#btnAdminLogout',modal).onclick = ()=>{ setAdminMode(false); renderAdminSection(modal); toast('Admin modundan çıkıldı'); };
+    $('#btnPublish',modal).onclick = async ()=>{
+      const songs = await DB.getAll('songs');
+      downloadFile('songs-data.json', JSON.stringify(songs,null,2), 'application/json');
+      toast('İndirildi — dosyayı bana ilet, siteye ekleyeyim.');
+    };
+  } else {
+    el.innerHTML = `<label>Admin Girişi</label>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="password" id="adminPw" placeholder="Şifre" style="flex:1; min-width:120px;">
+        <button class="btn" id="btnAdminLogin">Giriş</button>
+      </div>`;
+    const doLogin = async ()=>{
+      const pw = $('#adminPw',modal).value;
+      if(await checkAdminPassword(pw)){ setAdminMode(true); renderAdminSection(modal); toast('Admin modu açık'); }
+      else toast('Şifre yanlış','err');
+    };
+    $('#btnAdminLogin',modal).onclick = doLogin;
+    $('#adminPw',modal).onkeydown = e=>{ if(e.key==='Enter') doLogin(); };
+  }
 }
 $('#btnSettings').addEventListener('click', openSettingsModal);
 
