@@ -681,6 +681,14 @@ function chordSheetToChordPro(text){
 /* =========================================================================
    CHORDPRO-LIKE PARSING  ([Chord]lyric text, {section: name} lines)
    ========================================================================= */
+function splitRunIntoWordUnits(chord, text){
+  if(text===''){ return [{chord, text}]; }
+  const leading = text.match(/^\s*/)[0];
+  const rest = text.slice(leading.length);
+  if(rest===''){ return [{chord, text}]; } // whitespace-only run (e.g. spacing before an instrumental chord)
+  const words = rest.match(/\S+\s*/g) || [rest];
+  return words.map((w,i)=> ({chord: i===0?chord:null, text: i===0?leading+w:w}));
+}
 function parseChordProBody(text){
   const lines = (text||'').replace(/\r\n/g,'\n').split('\n');
   const sections = [];
@@ -715,8 +723,16 @@ function parseChordProBody(text){
     }
     const rest = raw.slice(idx);
     out.push({chord:pendingChord, text:rest});
-    // merge: if a unit has chord but empty text and next exists, keep as marker before next word
-    current.lines.push({raw, units: out});
+    // Split each chord/text run into one unit per word. A chord historically "held" over
+    // however many words happened to sit in the same run (whatever text followed it up to the
+    // next marker) — visually fine for reading, but it meant clicking any word in that run
+    // could only edit the chord for the *whole* run, not that one word. Word-level units keep
+    // the exact same rendering (only the run's own chord is shown, on its first word; later
+    // words carry chord:null and show nothing, unchanged) while making every single word its
+    // own independently clickable/editable target.
+    const wordUnits = [];
+    out.forEach(u=> wordUnits.push(...splitRunIntoWordUnits(u.chord, u.text)));
+    current.lines.push({raw, units: wordUnits});
   });
   return sections.filter(s=>s.lines.length || sections.length===1);
 }
