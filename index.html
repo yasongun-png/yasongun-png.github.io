@@ -1153,7 +1153,7 @@ const State = {
   selectedChord:null,
   isAdmin:false,
   headerCollapsed:false,
-  player:{ playing:false, timeline:[], startTime:0, pausedAt:0, activeIdx:-1, rafId:null, autoScroll:false, mode:'normal' /* or rehearsal */ },
+  player:{ playing:false, timeline:[], startTime:0, pausedAt:0, activeIdx:-1, rafId:null, autoScroll:false, mode:'normal' /* or rehearsal */, resumeAfterBeatEdit:false },
 };
 
 function publishedSongToRecord(s){
@@ -1424,15 +1424,37 @@ $('#lyricsWrap').addEventListener('click', e=>{
   const chordTag = e.target.closest('.chordtag');
   if(chordTag){
     showChordDetail(chordTag.dataset.chord);
-    if(State.isAdmin && !State.player.playing) openBeatPopoverAt(chordTag);
+    if(State.isAdmin){
+      // Adjusting a chord's timing while the rhythm is running fights with the very thing
+      // being adjusted, so pause for the edit — then pick back up from the same spot once
+      // the popover closes, instead of restarting the song.
+      if(State.player.playing){ State.player.resumeAfterBeatEdit = true; pausePlayback(); }
+      openBeatPopoverAt(chordTag);
+    }
     return;
   }
   const word = e.target.closest('.lyricword');
-  if(word && !State.player.playing){
-    if(!State.isAdmin){ toast('Söz/akor düzenlemek için admin girişi gerekiyor (Ayarlar)'); return; }
-    openChordPickerAt(word);
+  if(!word) return;
+  if(State.player.playing){
+    // Jump playback to wherever was just tapped and keep going, instead of ignoring the tap.
+    const sec=+word.dataset.sec, line=+word.dataset.line, u=+word.dataset.u;
+    const idx = timelineIndexAtOrBefore(sec,line,u);
+    if(idx>=0) seekToIndex(idx);
+    return;
   }
+  if(!State.isAdmin){ toast('Söz/akor düzenlemek için admin girişi gerekiyor (Ayarlar)'); return; }
+  openChordPickerAt(word);
 });
+function timelineIndexAtOrBefore(sec,line,u){
+  const tl = State.player.timeline;
+  let idx = -1;
+  for(let i=0;i<tl.length;i++){
+    const seg = tl[i];
+    const cmp = seg.sec-sec || seg.line-line || seg.u-u;
+    if(cmp<=0) idx=i; else break;
+  }
+  return idx<0 ? 0 : idx;
+}
 
 /* =========================================================================
    RIGHT PANEL — CHORD DETAIL
@@ -1673,6 +1695,7 @@ function pausePlayback(){
 function stopPlayback(){
   State.player.playing = false;
   State.player.pausedAt = 0;
+  State.player.resumeAfterBeatEdit = false;
   AudioEngine.stopMetronome();
   cancelAnimationFrame(State.player.rafId);
   if($('#btnPlay')) $('#btnPlay').textContent='▶';
@@ -1836,6 +1859,10 @@ function outsideBeatPopoverClick(e){
 function closeBeatPopover(){
   $('#beatPopover').classList.add('hidden');
   document.removeEventListener('click', outsideBeatPopoverClick, true);
+  if(State.player.resumeAfterBeatEdit){
+    State.player.resumeAfterBeatEdit = false;
+    startPlayback();
+  }
 }
 function openMeasureEditor(){
   const s = State.currentSong;
