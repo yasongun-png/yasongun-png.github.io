@@ -387,6 +387,8 @@ body.performance #songHeader h1{font-size:2rem;}
 <div id="chordPicker" class="hidden"></div>
 <div id="beatPopover" class="hidden"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 "use strict";
 /* =========================================================================
@@ -869,12 +871,118 @@ const DB = (()=>{
     },
     async put(store,obj){
       const os = await tx(store,'readwrite');
-      return await new Promise((res,rej)=>{ const r=os.put(obj); r.onsuccess=()=>res(obj); r.onerror=()=>rej(r.error); });
+      const result = await new Promise((res,rej)=>{ const r=os.put(obj); r.onsuccess=()=>res(obj); r.onerror=()=>rej(r.error); });
+      // Mirror personal-library writes (songs/setlists only — not rhythms/meta) up to Firestore
+      // when cross-device sync is configured, so IndexedDB stays the fast local source of truth
+      // and Firestore is just kept in step with it.
+      if(store==='songs' || store==='setlists') FirebaseSync.pushRecord(store, obj);
+      return result;
     },
     async delete(store,id){
       const os = await tx(store,'readwrite');
-      return await new Promise((res,rej)=>{ const r=os.delete(id); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+      await new Promise((res,rej)=>{ const r=os.delete(id); r.onsuccess=()=>res(); r.onerror=()=>rej(r.error); });
+      if(store==='songs' || store==='setlists') FirebaseSync.deleteRecord(store, id);
     }
+  };
+})();
+/* =========================================================================
+   FIREBASE / FIRESTORE SYNC — bring-your-own-project, configured entirely
+   from Settings (paste a Firebase config JSON, same idea as other apps that
+   let each deployment point at its own project without a code change).
+   Two independent uses, both optional and off unless configured:
+     1. Public catalog: admin "Yayınla" writes straight to a `publicSongs`
+        collection instead of a file the admin has to hand off to be
+        committed — every visitor sees it the moment it's published.
+     2. Personal library sync: songs/setlists this device writes locally
+        also mirror to `userLibraries/{syncCode}/...` so the same syncCode
+        entered on another device pulls them down too (merged by the
+        `updated` timestamp already on every record — last write wins).
+   Everything falls back to fully offline behavior when no config is saved.
+   ========================================================================= */
+const FirebaseSync = (()=>{
+  const LS_KEY = 'chordstage_firebase_config';
+  let db = null, connected = false, initError = null;
+  function getStoredConfig(){
+    try{ const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; }catch(e){ return null; }
+  }
+  // Accepts either raw JSON, or a JS-literal assignment like
+  // `const firebaseConfig = { apiKey: "...", ... };` (unquoted keys and all) —
+  // whatever a Firebase Console "Your apps" code snippet happens to look like.
+  function parseConfigInput(text){
+    if(!text || !text.trim()) throw new Error('Yapıştırılan alan boş');
+    const start = text.indexOf('{'), end = text.lastIndexOf('}');
+    if(start<0 || end<0 || end<start) throw new Error('Geçerli bir {...} bloğu bulunamadı');
+    const raw = text.slice(start, end+1);
+    let obj;
+    try{ obj = JSON.parse(raw); }
+    catch(e){
+      const quoted = raw.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":').replace(/'/g,'"');
+      obj = JSON.parse(quoted);
+    }
+    if(!obj.apiKey || !obj.projectId) throw new Error('apiKey ve projectId alanları gerekli');
+    return obj;
+  }
+  function init(){
+    const cfg = getStoredConfig();
+    if(!cfg){ connected=false; return; }
+    if(typeof firebase==='undefined'){ connected=false; initError='Firebase SDK yüklenemedi (bağlantı yok olabilir)'; return; }
+    try{
+      const app = firebase.apps && firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(cfg);
+      db = app.firestore();
+      connected = true;
+    }catch(e){ console.error('Firebase init failed', e); connected=false; initError=e.message; }
+  }
+  function save(text){
+    const cfg = parseConfigInput(text);
+    localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+  }
+  function reset(){ localStorage.removeItem(LS_KEY); }
+  function getSyncCode(){ return (State.settings.syncCode||'').trim(); }
+  // Fire-and-forget: a personal sync push failing (offline, no code set, no rules) must never
+  // block or break the local save that triggered it — DB.put()/delete() already succeeded.
+  function pushRecord(store, obj){
+    const code = getSyncCode();
+    if(!connected || !code) return;
+    db.collection('userLibraries').doc(code).collection(store).doc(obj.id).set(obj)
+      .catch(e=> console.error('Firestore push failed', e));
+  }
+  function deleteRecord(store, id){
+    const code = getSyncCode();
+    if(!connected || !code) return;
+    db.collection('userLibraries').doc(code).collection(store).doc(id).delete()
+      .catch(e=> console.error('Firestore delete-sync failed', e));
+  }
+  // Pull the syncCode's remote songs/setlists and merge with what's already local, newest
+  // `updated` timestamp per id wins; anything only local gets pushed up so the remote side
+  // catches up too. Runs once at startup (when configured) and whenever the user asks to sync.
+  async function pullAndMerge(){
+    const code = getSyncCode();
+    if(!connected || !code) return {songs:0, setlists:0};
+    const counts = {songs:0, setlists:0};
+    for(const store of ['songs','setlists']){
+      const snap = await db.collection('userLibraries').doc(code).collection(store).get();
+      const remoteById = new Map(snap.docs.map(d=> [d.id, d.data()]));
+      const local = await DB.getAll(store);
+      const localById = new Map(local.map(r=> [r.id, r]));
+      for(const [id, remote] of remoteById){
+        const loc = localById.get(id);
+        if(!loc || (remote.updated||0) > (loc.updated||0)){
+          await DB.put(store, remote); // DB.put already re-mirrors, harmless no-op push back
+          counts[store]++;
+        }
+      }
+      for(const [id, loc] of localById){
+        if(!remoteById.has(id)) pushRecord(store, loc); // local-only record: push it up
+      }
+    }
+    return counts;
+  }
+  return {
+    init, save, reset, parseConfigInput, getStoredConfig, pushRecord, deleteRecord, pullAndMerge, getSyncCode,
+    isConnected(){ return connected; },
+    getDb(){ return db; },
+    getProjectId(){ const c=getStoredConfig(); return c ? c.projectId : null; },
+    getError(){ return initError; }
   };
 })();
 
@@ -1183,7 +1291,7 @@ const State = {
   currentSong: null, currentSetlist:null,
   filter:{q:'', fav:false, recent:false, tag:null},
   recentIds: [],
-  settings:{ theme:'light', fontSize:1.15, chordSize:1.0, scrollSpeed:100, defaultBpm:100, defaultRhythm:'basic44', showDiagrams:true, animations:true, lefty:false, volume:0.7, chordPianoEnabled:false, chordPianoVolume:0.5 },
+  settings:{ theme:'light', fontSize:1.15, chordSize:1.0, scrollSpeed:100, defaultBpm:100, defaultRhythm:'basic44', showDiagrams:true, animations:true, lefty:false, volume:0.7, chordPianoEnabled:false, chordPianoVolume:0.5, syncCode:'' },
   transpose:0, // current display transpose (semitones), not saved to song
   selectedChord:null,
   isAdmin:false,
@@ -1197,6 +1305,13 @@ function publishedSongToRecord(s){
   return rec;
 }
 async function fetchPublishedSongs(){
+  if(FirebaseSync.isConnected()){
+    try{
+      const snap = await FirebaseSync.getDb().collection('publicSongs').get();
+      const list = snap.docs.map(d=> d.data());
+      if(list.length) return list;
+    }catch(e){ console.error('Firestore publicSongs fetch failed, falling back to static file', e); }
+  }
   try{
     const res = await fetch('songs-data.json', {cache:'no-store'});
     if(!res.ok) return null;
@@ -2708,6 +2823,11 @@ function openSettingsModal(){
 function renderAdminSection(modal){
   const el = $('#adminSection', modal);
   if(State.isAdmin){
+    const fbConnected = FirebaseSync.isConnected();
+    const fbCfg = FirebaseSync.getStoredConfig();
+    const publishHint = fbConnected
+      ? '"Yayınla" şarkılarını doğrudan Firestore\'a yazar — herkes anında görür, dosya indirip bana göndermene gerek yok.'
+      : '"Yayınla" mevcut tüm şarkılarını indirir; siteye herkese açık şekilde eklemek için o dosyayı bana göndermen (veya yapıştırman) yeterli.';
     el.innerHTML = `<label>Admin</label>
       <div style="color:var(--active); font-weight:600;">✅ Admin modundasınız — şarkı ekleme/düzenleme/silme açık.</div>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
@@ -2715,14 +2835,73 @@ function renderAdminSection(modal){
         <button class="btn danger" id="btnAdminLogout">Admin Çıkışı</button>
       </div>
       <div style="font-size:.72rem; color:var(--text-dim); margin-top:4px;">
-        "Yayınla" mevcut tüm şarkılarını indirir; siteye herkese açık şekilde eklemek için o dosyayı bana göndermen (veya yapıştırman) yeterli. Telifli şarkı sözlerini herkese açık yayınlamak telif ihlali olabilir — kendi özgün/telifsiz içeriklerin dışındakileri sadece kendi cihazında sakla, yayınlama.
+        ${publishHint} Telifli şarkı sözlerini herkese açık yayınlamak telif ihlali olabilir — kendi özgün/telifsiz içeriklerin dışındakileri sadece kendi cihazında sakla, yayınlama.
+      </div>
+      <hr>
+      <label>Firebase Yapılandırması</label>
+      <div style="font-size:.72rem;color:var(--text-dim); margin-bottom:6px;">
+        Herkese açık şarkı kataloğu ve kişisel kütüphane senkronu Firebase/Firestore üzerinden bağlanır. Farklı bir Firebase projesine geçmek istersen, o projenin yapılandırmasını (Firebase Console → Project Settings → Your apps) buraya yapıştırıp kaydetmen yeterli — kod değişikliği gerekmez.
+      </div>
+      <div style="border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:8px; font-size:.85rem;">
+        <div><b>Bağlantı Durumu:</b> <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${fbConnected?'#2ecc71':'#e74c3c'};margin-right:4px;"></span>${fbConnected?'Bağlı':'Bağlı değil'}${(!fbConnected && FirebaseSync.getError())?` (${escapeHtml(FirebaseSync.getError())})`:''}</div>
+        <div><b>Proje ID:</b> ${fbCfg?escapeHtml(fbCfg.projectId):'—'}</div>
+        <div><b>Yapılandırma:</b> ${fbCfg?'Özel':'Yok (yapılandırılmadı)'}</div>
+      </div>
+      <textarea id="fbConfigInput" rows="6" placeholder='{"apiKey": "...", "authDomain": "...", "projectId": "...", ...}'>${fbCfg?escapeHtml(JSON.stringify(fbCfg,null,2)):''}</textarea>
+      <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
+        <button class="btn primary" id="btnFbSave">Kaydet ve Yeniden Başlat</button>
+        <button class="btn" id="btnFbReset">Bağlantıyı Kaldır</button>
+      </div>
+      <hr>
+      <label>Kişisel Kütüphane Senkronu</label>
+      <div style="font-size:.72rem;color:var(--text-dim); margin-bottom:6px;">
+        ${fbConnected
+          ? 'Bir senkron kodu belirle (kendi uydurduğun bir kelime/şifre olabilir) — aynı kodu başka bir cihazda da girersen şarkı/setlist listeni orada da görürsün, ikisi arasında otomatik senkronize olur.'
+          : 'Bu özellik için önce yukarıdan bir Firebase yapılandırması kaydetmen gerekiyor.'}
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" id="syncCodeInput" placeholder="Senkron kodu" value="${escapeHtml(State.settings.syncCode||'')}" style="flex:1; min-width:140px;" ${fbConnected?'':'disabled'}>
+        <button class="btn" id="btnSyncSave" ${fbConnected?'':'disabled'}>Kaydet ve Senkronize Et</button>
       </div>`;
     $('#btnAdminLogout',modal).onclick = ()=>{ setAdminMode(false); renderAdminSection(modal); toast('Admin modundan çıkıldı'); };
     $('#btnPublish',modal).onclick = async ()=>{
       const songs = await DB.getAll('songs');
-      downloadFile('songs-data.json', JSON.stringify(songs,null,2), 'application/json');
-      toast('İndirildi — dosyayı bana ilet, siteye ekleyeyim.');
+      if(fbConnected){
+        try{
+          const db = FirebaseSync.getDb();
+          const batch = db.batch();
+          songs.forEach(s=> batch.set(db.collection('publicSongs').doc(s.id), s));
+          await batch.commit();
+          toast(`${songs.length} şarkı Firestore'a yayınlandı 🎉`);
+        }catch(e){ console.error(e); toast('Firestore\'a yayınlama başarısız: '+e.message,'err'); }
+      } else {
+        downloadFile('songs-data.json', JSON.stringify(songs,null,2), 'application/json');
+        toast('İndirildi — dosyayı bana ilet, siteye ekleyeyim.');
+      }
     };
+    $('#btnFbSave',modal).onclick = ()=>{
+      try{
+        FirebaseSync.save($('#fbConfigInput',modal).value);
+        toast('Kaydedildi, yeniden başlatılıyor…');
+        setTimeout(()=> location.reload(), 500);
+      }catch(e){ toast('Geçersiz yapılandırma: '+e.message, 'err'); }
+    };
+    $('#btnFbReset',modal).onclick = ()=>{
+      FirebaseSync.reset();
+      toast('Bağlantı kaldırıldı, yeniden başlatılıyor…');
+      setTimeout(()=> location.reload(), 500);
+    };
+    if(fbConnected){
+      $('#btnSyncSave',modal).onclick = async ()=>{
+        State.settings.syncCode = $('#syncCodeInput',modal).value.trim();
+        saveSettings();
+        toast('Senkronize ediliyor…');
+        const counts = await FirebaseSync.pullAndMerge();
+        State.songs = await DB.getAll('songs'); State.setlists = await DB.getAll('setlists');
+        renderSongList();
+        toast(`Senkron tamam — ${counts.songs} şarkı, ${counts.setlists} setlist güncellendi`);
+      };
+    }
   } else {
     el.innerHTML = `<label>Admin Girişi</label>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -2809,9 +2988,14 @@ window.addEventListener('resize', snapHorizontalScroll, {passive:true});
    ========================================================================= */
 (async function init(){
   try{
+    FirebaseSync.init();
     await loadAll();
     renderSongList();
     showView('library');
+    if(FirebaseSync.isConnected() && FirebaseSync.getSyncCode()){
+      const counts = await FirebaseSync.pullAndMerge();
+      if(counts.songs || counts.setlists){ State.songs = await DB.getAll('songs'); State.setlists = await DB.getAll('setlists'); renderSongList(); }
+    }
   }catch(err){
     console.error(err);
     toast('Veritabanı yüklenemedi: '+err.message, 'err');
