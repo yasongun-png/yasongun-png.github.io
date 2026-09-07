@@ -1400,6 +1400,7 @@ function renderSongHeader(){
         <button class="btn icon" id="btnFavToggle" title="Favori">${s.favorite?'★':'☆'}</button>
         ${State.isAdmin?'<button class="btn icon" id="btnEditSong" title="Düzenle">✏️</button>':''}
         ${State.isAdmin?'<button class="btn icon" id="btnTimingEditor" title="Akorlar Arası Süre">⏱</button>':''}
+        ${State.isAdmin?'<button class="btn icon" id="btnTapRecorder" title="Dinleyerek Akor Zamanı Kaydet">🎙</button>':''}
         <button class="btn icon" id="btnExportSong" title="Dışa Aktar">📤</button>
         <button class="btn icon" id="btnPrintSong" title="Yazdır / PDF">🖨️</button>
         <button class="btn icon" id="btnAddToSetlist" title="Setliste ekle">📋</button>
@@ -1423,6 +1424,7 @@ function renderSongHeader(){
   $('#btnFavToggle').onclick=()=>{ s.favorite=!s.favorite; DB.put('songs',s); renderSongHeader(); renderSongList(); };
   if($('#btnEditSong')) $('#btnEditSong').onclick=()=> openEditor(s);
   if($('#btnTimingEditor')) $('#btnTimingEditor').onclick=()=> openMeasureEditor();
+  if($('#btnTapRecorder')) $('#btnTapRecorder').onclick=()=> openTapRecorder();
   $('#btnExportSong').onclick=()=> openExportModal(s);
   $('#btnPrintSong').onclick=()=> printSong(s);
   $('#btnAddToSetlist').onclick=()=> openAddToSetlistModal(s);
@@ -1984,6 +1986,81 @@ function openRepeatPopoverAt(btn, si){
   }
   render();
   setTimeout(()=> document.addEventListener('click', outsideBeatPopoverClick, true), 0);
+}
+/* =========================================================================
+   TAP RECORDER — the human ear is the most reliable source of chord timing
+   there is; this just wires a human finger to the JSON. Play the song from
+   any source while this is open and tap the button the instant each chord
+   changes; the real elapsed time between taps becomes that chord's beat gap.
+   ========================================================================= */
+function openTapRecorder(){
+  const s = State.currentSong;
+  buildTimeline();
+  const chords = State.player.timeline.map(t=>t.chord);
+  if(!chords.length){ toast('Bu şarkıda akor yok','err'); return; }
+  let tapTimes = [];
+  let running = false, startPerf = 0, rafId = null;
+  const modal = openModal(`
+    <h2>🎙 Dinleyerek Akor Zamanı Kaydet</h2>
+    <div style="font-size:.8rem;color:var(--text-dim);margin-bottom:10px;">
+      Şarkıyı bir kaynaktan çalmaya başla (bu uygulamadan ya da başka bir yerden dinleyerek), her akor değiştiği anda büyük butona bas. Gerçek zaman aralıkları akor sürelerine dönüştürülüp kaydedilecek.
+    </div>
+    <div style="text-align:center; padding:10px 0;">
+      <div style="font-size:.72rem;color:var(--text-dim);">ŞİMDİKİ AKOR</div>
+      <div id="tapCurrentChord" style="font-size:2.4rem; font-weight:800; color:var(--active);">—</div>
+      <div style="font-size:.72rem;color:var(--text-dim); margin-top:4px;">SONRAKİ</div>
+      <div id="tapNextChord" style="font-size:1.3rem; font-weight:700; color:var(--next);">${escapeHtml(chords[0])}</div>
+      <div id="tapElapsed" style="font-size:.8rem;color:var(--text-dim); margin-top:8px;">00:00.0</div>
+      <div id="tapProgress" style="font-size:.72rem;color:var(--text-dim);"></div>
+    </div>
+    <div style="display:flex; justify-content:center; gap:10px; margin:8px 0;">
+      <button class="btn primary" id="tapStart" style="font-size:1.05rem; padding:14px 26px;">▶ Başlat</button>
+      <button class="btn" id="tapChange" style="font-size:1.25rem; padding:14px 34px; display:none;">👆 Akor Değişti</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="tapCancel">İptal</button>
+      <button class="btn primary" id="tapFinish" style="display:none;">⏹ Bitir ve Kaydet</button>
+    </div>
+  `);
+  function fmt(t){ const m=Math.floor(t/60); const sec=(t%60).toFixed(1).padStart(4,'0'); return String(m).padStart(2,'0')+':'+sec; }
+  function tick(){ if(!running) return; $('#tapElapsed',modal).textContent = fmt(performance.now()/1000-startPerf); rafId = requestAnimationFrame(tick); }
+  function updateDisplay(idx){
+    $('#tapCurrentChord',modal).textContent = chords[idx] || '—';
+    $('#tapNextChord',modal).textContent = chords[idx+1] || '(bitiş)';
+    $('#tapProgress',modal).textContent = `${Math.min(idx+1,chords.length)} / ${chords.length} akor`;
+  }
+  $('#tapStart',modal).onclick = ()=>{
+    running = true; startPerf = performance.now()/1000; tapTimes = [0];
+    updateDisplay(0);
+    $('#tapStart',modal).style.display='none';
+    $('#tapChange',modal).style.display='';
+    $('#tapFinish',modal).style.display='';
+    tick();
+  };
+  $('#tapChange',modal).onclick = ()=>{
+    if(!running || tapTimes.length>=chords.length) return;
+    tapTimes.push(performance.now()/1000-startPerf);
+    updateDisplay(tapTimes.length-1);
+    if(tapTimes.length>=chords.length) $('#tapChange',modal).style.display='none';
+  };
+  $('#tapFinish',modal).onclick = async ()=>{
+    running = false; cancelAnimationFrame(rafId);
+    if(tapTimes.length<2){ toast('Yeterli akor değişimi kaydedilmedi','err'); return; }
+    const times = tapTimes.slice();
+    if(times.length===chords.length) times.push(performance.now()/1000-startPerf);
+    const secondsPerBeat = 60/s.bpm;
+    const gaps = [];
+    for(let i=0;i<times.length-1;i++){
+      gaps.push(Math.max(0.25, Math.round(((times[i+1]-times[i])/secondsPerBeat)*100)/100));
+    }
+    s.chordGaps = gaps;
+    s.updated = Date.now();
+    await DB.put('songs', s);
+    buildTimeline();
+    closeModal();
+    toast('Akor zamanları kaydedildi 🎉');
+  };
+  $('#tapCancel',modal).onclick = ()=>{ running=false; cancelAnimationFrame(rafId); closeModal(); };
 }
 function openMeasureEditor(){
   const s = State.currentSong;
