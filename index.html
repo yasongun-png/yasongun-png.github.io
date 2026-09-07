@@ -1996,8 +1996,24 @@ function openRepeatPopoverAt(btn, si){
 function openTapRecorder(){
   const s = State.currentSong;
   buildTimeline();
-  const chords = State.player.timeline.map(t=>t.chord);
+  const tl = State.player.timeline;
+  const chords = tl.map(t=>t.chord);
   if(!chords.length){ toast('Bu şarkıda akor yok','err'); return; }
+  const sections = effectiveSections();
+  const lyricsHtml = sections.map((sec,si)=>{
+    const lines = sec.lines.map((line,li)=>{
+      if(!line.units.length || (line.units.length===1 && !line.units[0].chord && !line.units[0].text.trim())){
+        return `<div class="emptyline"></div>`;
+      }
+      const clus = line.units.map((u,ui)=>{
+        const words = u.text.length ? escapeHtml(u.text) : '&nbsp;';
+        const chordIdx = u.chord ? tl.findIndex(t=> t.sec===si && t.line===li && t.u===ui) : -1;
+        return `<span class="clu" ${chordIdx>=0?`data-chordidx="${chordIdx}"`:''}>${chordTagSpan(u.chord)}<span class="lyricword">${words}</span></span>`;
+      }).join('');
+      return `<div class="lyric-line">${clus}</div>`;
+    }).join('');
+    return `<div class="section-block"><div class="section-title">${escapeHtml(sec.name)}</div>${lines}</div>`;
+  }).join('');
   let tapTimes = [];
   let running = false, startPerf = 0, rafId = null;
   const modal = openModal(`
@@ -2005,6 +2021,7 @@ function openTapRecorder(){
     <div style="font-size:.8rem;color:var(--text-dim);margin-bottom:10px;">
       Şarkıyı bir kaynaktan çalmaya başla (bu uygulamadan ya da başka bir yerden dinleyerek), her akor değiştiği anda büyük butona bas. Gerçek zaman aralıkları akor sürelerine dönüştürülüp kaydedilecek.
     </div>
+    <div id="tapLyricsWrap" style="max-height:34vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:10px; background:var(--panel-2, rgba(127,127,127,.06));">${lyricsHtml}</div>
     <div style="text-align:center; padding:10px 0;">
       <div style="font-size:.72rem;color:var(--text-dim);">ŞİMDİKİ AKOR</div>
       <div id="tapCurrentChord" style="font-size:2.4rem; font-weight:800; color:var(--active);">—</div>
@@ -2028,6 +2045,9 @@ function openTapRecorder(){
     $('#tapCurrentChord',modal).textContent = chords[idx] || '—';
     $('#tapNextChord',modal).textContent = chords[idx+1] || '(bitiş)';
     $('#tapProgress',modal).textContent = `${Math.min(idx+1,chords.length)} / ${chords.length} akor`;
+    $$('.clu', $('#tapLyricsWrap',modal)).forEach(c=> c.classList.remove('playing-chord'));
+    const node = $(`.clu[data-chordidx="${idx}"]`, $('#tapLyricsWrap',modal));
+    if(node){ node.classList.add('playing-chord'); node.scrollIntoView({block:'center', behavior:'smooth'}); }
   }
   $('#tapStart',modal).onclick = ()=>{
     running = true; startPerf = performance.now()/1000; tapTimes = [0];
