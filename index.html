@@ -2211,7 +2211,10 @@ function openEditor(song){
   const s = song || {id:uid(), title:'', artist:'', album:'', key:'C', bpm:100, timeSig:'4/4', capo:0, rhythmId:'basic44', genre:'', notes:'', favorite:false, tags:[], sections:[{name:'Verse',lines:[]}], chordDuration:2, tuning:'Standard E', instrument:'guitar', created:Date.now(), updated:Date.now()};
   const workingSections = JSON.parse(JSON.stringify(s.sections));
   const modal = openModal(`
-    <h2>${isNew?'Yeni Şarkı':'Şarkıyı Düzenle'}</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+      <h2 style="margin:0;">${isNew?'Yeni Şarkı':'Şarkıyı Düzenle'}</h2>
+      ${isNew?'<button class="btn" id="btnGoImport">📄 Dosyadan İçe Aktar</button>':''}
+    </div>
     <div class="formgrid">
       <div class="formrow"><label>Şarkı Adı</label><input type="text" id="eTitle" value="${escapeHtml(s.title)}"></div>
       <div class="formrow"><label>Sanatçı</label><input type="text" id="eArtist" value="${escapeHtml(s.artist)}"></div>
@@ -2249,6 +2252,7 @@ function openEditor(song){
     ).join('');
   }
   syncAdvancedFromWorking(); syncSimpleFromWorking();
+  if($('#btnGoImport',modal)) $('#btnGoImport',modal).onclick = ()=>{ closeModal(); openImportModal(); };
   $('#modeSimple',modal).onclick = ()=>{ $('#editorSimple',modal).classList.remove('hidden'); $('#editorAdvanced',modal).classList.add('hidden'); syncSimpleFromWorking(); };
   $('#modeAdvanced',modal).onclick = ()=>{
     // pull simple edits into workingSections first (already live), then show advanced text
