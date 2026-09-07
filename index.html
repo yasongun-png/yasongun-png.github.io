@@ -1107,6 +1107,16 @@ const DEMO_RHYTHMS = [
   {id:'reggae44', name:'Reggae', timeSig:'4/4', bpmSuggest:90, pattern:['-','U','-','U']},
   {id:'waltz34', name:'Vals 3/4', timeSig:'3/4', bpmSuggest:110, pattern:['D','U','U']},
   {id:'funk44', name:'Funk', timeSig:'4/4', bpmSuggest:100, pattern:['D','UU','U','DU']},
+  {id:'disco44', name:'Disko', timeSig:'4/4', bpmSuggest:118, pattern:['D','U','D','U']},
+  {id:'blues44', name:'Blues Shuffle', timeSig:'4/4', bpmSuggest:85, pattern:['D','-','DU','-']},
+  {id:'bossa44', name:'Bossa Nova', timeSig:'4/4', bpmSuggest:100, pattern:['D','-','U','DU']},
+  {id:'punk44', name:'Punk', timeSig:'4/4', bpmSuggest:175, pattern:['D','U','D','U']},
+  {id:'metal44', name:'Metal', timeSig:'4/4', bpmSuggest:150, pattern:['D','D','U','D']},
+  {id:'hiphop44', name:'Hip-Hop / RnB', timeSig:'4/4', bpmSuggest:85, pattern:['D','-','U','-']},
+  {id:'samba24', name:'Samba', timeSig:'2/4', bpmSuggest:110, pattern:['D','U','DU','U']},
+  {id:'aksak98', name:'Türkü 9/8 (Aksak)', timeSig:'9/8', bpmSuggest:100, pattern:['D','-','D','-','D','-','D','U','U']},
+  {id:'mixed78', name:'7/8 Karışık', timeSig:'7/8', bpmSuggest:120, pattern:['D','-','D','-','D','U','U']},
+  {id:'halay44', name:'Halay', timeSig:'4/4', bpmSuggest:124, pattern:['D','U','D','U']},
 ];
 
 /* =========================================================================
@@ -1336,6 +1346,16 @@ async function loadAll(){
   if(!rhythms.length){
     for(const r of DEMO_RHYTHMS) await DB.put('rhythms', r);
     rhythms = DEMO_RHYTHMS;
+  } else {
+    // A device that already seeded its rhythms store before new built-ins were added here
+    // would never see them otherwise — add whatever's missing by id, leaving the user's own
+    // custom rhythms (uid()-generated ids, never colliding with these) untouched.
+    const existingIds = new Set(rhythms.map(r=>r.id));
+    const missing = DEMO_RHYTHMS.filter(r=> !existingIds.has(r.id));
+    if(missing.length){
+      for(const r of missing) await DB.put('rhythms', r);
+      rhythms = rhythms.concat(missing);
+    }
   }
   State.rhythms = rhythms;
   State.setlists = await DB.getAll('setlists');
