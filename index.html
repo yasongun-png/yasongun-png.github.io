@@ -1125,6 +1125,20 @@ const AudioEngine = (()=>{
     noise.connect(filter); filter.connect(gain); gain.connect(c.destination);
     noise.start(when); noise.stop(when+dur+0.02);
   }
+  // A crash cymbal on the last step of the pattern before it loops back to the start — the
+  // little accent a real drummer adds to mark "here's where the phrase turns over." Optional
+  // (off by default, toggled in Settings) since it's not to everyone's taste on every rhythm.
+  function crash(when){
+    const c = ensure(); if(!c) return;
+    const dur = 0.6;
+    const noise = c.createBufferSource(); noise.buffer = getNoiseBuffer(c, dur+0.02);
+    const filter = c.createBiquadFilter(); filter.type='highpass'; filter.frequency.value=4000;
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(masterVol*0.45, when);
+    gain.gain.exponentialRampToValueAtTime(0.001, when+dur);
+    noise.connect(filter); filter.connect(gain); gain.connect(c.destination);
+    noise.start(when); noise.stop(when+dur+0.02);
+  }
   // metronome / rhythm scheduler using lookahead
   let schedulerTimer=null, nextNoteTime=0, current16th=0, beatsPerMeasure=4, bpm=90, running=false;
   let onBeatCb=null, pattern=null, patternIndex=0;
@@ -1151,6 +1165,7 @@ const AudioEngine = (()=>{
         else if(step==='DU'){ kick(nextNoteTime); hihat(nextNoteTime+secondsPerBeat*0.5,false); }
         else if(step==='UU'){ snare(nextNoteTime); hihat(nextNoteTime+secondsPerBeat*0.5,false); }
         // '-' is a rest: no hit.
+        if(State.settings.rhythmFillEnabled && (current16th % pattern.length) === pattern.length-1) crash(nextNoteTime);
       }
       if(onBeatCb) onBeatCb(beatInMeasure, nextNoteTime);
       const secondsPerBeat = 60.0/bpm;
@@ -1169,7 +1184,7 @@ const AudioEngine = (()=>{
     freqs.forEach(f=> pluckString(f, when, dur, vol));
   }
   return {
-    ensure, setVolume, strumChord, pluckString, playChordBlock,
+    ensure, setVolume, strumChord, pluckString, playChordBlock, crash,
     startMetronome(newBpm, sig, cb){
       const c=ensure(); if(!c) return;
       bpm = newBpm; beatsPerMeasure = parseInt(sig)||4; current16th=0; onBeatCb=cb;
@@ -1218,7 +1233,7 @@ const State = {
   currentSong: null, currentSetlist:null,
   filter:{q:'', fav:false, recent:false, tag:null},
   recentIds: [],
-  settings:{ theme:'light', fontSize:1.15, chordSize:1.0, scrollSpeed:100, defaultBpm:100, defaultRhythm:'basic44', showDiagrams:true, animations:true, lefty:false, volume:0.7, chordPianoEnabled:false, chordPianoVolume:0.5, syncCode:'' },
+  settings:{ theme:'light', fontSize:1.15, chordSize:1.0, scrollSpeed:100, defaultBpm:100, defaultRhythm:'basic44', showDiagrams:true, animations:true, lefty:false, volume:0.7, chordPianoEnabled:false, chordPianoVolume:0.5, syncCode:'', rhythmFillEnabled:false },
   transpose:0, // current display transpose (semitones), not saved to song
   selectedChord:null,
   isAdmin:false,
@@ -2703,6 +2718,7 @@ function openSettingsModal(){
       <div class="formrow"><label>Ses Seviyesi</label><input type="range" id="sVol" min="0" max="1" step="0.05" value="${st.volume}"></div>
       <div class="formrow"><label><input type="checkbox" id="sChordPiano" ${st.chordPianoEnabled?'checked':''}> Ritimle birlikte akoru piyano ile çal</label></div>
       <div class="formrow"><label>Akor Piyano Ses Seviyesi</label><input type="range" id="sChordPianoVol" min="0" max="1" step="0.05" value="${st.chordPianoVolume}" ${st.chordPianoEnabled?'':'disabled'}></div>
+      <div class="formrow"><label><input type="checkbox" id="sRhythmFill" ${st.rhythmFillEnabled?'checked':''}> Ritim döngüsünün sonunda davul fill/crash çal</label></div>
       <div class="formrow"><label><input type="checkbox" id="sDiagrams" ${st.showDiagrams?'checked':''}> Akor diyagramı göster</label></div>
       <div class="formrow"><label><input type="checkbox" id="sAnim" ${st.animations?'checked':''}> Animasyonlar</label></div>
       <div class="formrow"><label><input type="checkbox" id="sLefty" ${st.lefty?'checked':''}> Solak gitar</label></div>
@@ -2731,6 +2747,7 @@ function openSettingsModal(){
     st.theme=$('#sTheme',modal).value; st.fontSize=+$('#sFont',modal).value; st.chordSize=+$('#sChord',modal).value;
     st.defaultBpm=+$('#sBpm',modal).value; st.defaultRhythm=$('#sRhythm',modal).value; st.volume=+$('#sVol',modal).value;
     st.chordPianoEnabled=$('#sChordPiano',modal).checked; st.chordPianoVolume=+$('#sChordPianoVol',modal).value;
+    st.rhythmFillEnabled=$('#sRhythmFill',modal).checked;
     st.showDiagrams=$('#sDiagrams',modal).checked; st.animations=$('#sAnim',modal).checked; st.lefty=$('#sLefty',modal).checked;
     saveSettings(); applySettingsToUI(); closeModal();
     if(State.currentSong) renderLyrics();
