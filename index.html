@@ -2030,19 +2030,16 @@ function openTapRecorder(){
   let tapTimes = [];
   let running = false, startPerf = 0, rafId = null;
   const modal = openModal(`
-    <h2 style="margin-bottom:4px;">🎙 Dinleyerek Akor Zamanı Kaydet</h2>
-    <div id="tapIntro" style="font-size:.68rem;color:var(--text-dim);margin-bottom:6px; line-height:1.3;">
-      Şarkıyı çalmaya başla, her akor değiştiğinde büyük butona bas.
+    <h2 style="margin-bottom:2px; font-size:1.15rem;">🎙 Dinleyerek Akor Zamanı Kaydet</h2>
+    <div id="tapIntro" style="font-size:.66rem;color:var(--text-dim);margin-bottom:4px; line-height:1.25;">
+      Şarkıyı çalmaya başla (ritim de eşlik edecek), her akor değiştiğinde büyük butona bas.
       ${s.youtubeUrl?` <a href="${escapeHtml(s.youtubeUrl)}" target="_blank" rel="noopener">▶️ YouTube Music'te aç</a>`:''}
     </div>
-    <div id="tapLyricsWrap" style="max-height:34vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:10px; background:var(--panel-2, rgba(127,127,127,.06));">${lyricsHtml}</div>
-    <div style="text-align:center; padding:10px 0;">
-      <div style="font-size:.72rem;color:var(--text-dim);">ŞİMDİKİ AKOR</div>
-      <div id="tapCurrentChord" style="font-size:2.4rem; font-weight:800; color:var(--active);">—</div>
-      <div style="font-size:.72rem;color:var(--text-dim); margin-top:4px;">SONRAKİ</div>
-      <div id="tapNextChord" style="font-size:1.3rem; font-weight:700; color:var(--next);">${escapeHtml(chords[0])}</div>
-      <div id="tapElapsed" style="font-size:.8rem;color:var(--text-dim); margin-top:8px;">00:00.0</div>
-      <div id="tapProgress" style="font-size:.72rem;color:var(--text-dim);"></div>
+    <div id="tapLyricsWrap" style="max-height:38vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px 8px; margin-bottom:6px; background:var(--panel-2, rgba(127,127,127,.06));">${lyricsHtml}</div>
+    <div id="tapStatus" style="display:flex; align-items:baseline; justify-content:center; gap:10px; flex-wrap:wrap; padding:4px 0; font-size:.82rem;">
+      <span>🎵 <b id="tapCurrentChord" style="font-size:1.4rem; color:var(--active);">—</b> → <b id="tapNextChord" style="color:var(--next);">${escapeHtml(chords[0])}</b></span>
+      <span id="tapElapsed" style="color:var(--text-dim);">00:00.0</span>
+      <span id="tapProgress" style="color:var(--text-dim);"></span>
     </div>
     <div class="modal-actions" style="justify-content:space-between; align-items:center;">
       <div style="display:flex; gap:8px;">
@@ -2069,10 +2066,13 @@ function openTapRecorder(){
     running = true; startPerf = performance.now()/1000; tapTimes = [0];
     updateDisplay(0);
     $('#tapIntro',modal).style.display='none';
-    $('#tapLyricsWrap',modal).style.maxHeight='44vh';
+    $('#tapLyricsWrap',modal).style.maxHeight='50vh';
     $('#tapStart',modal).style.display='none';
     $('#tapChange',modal).style.display='';
     $('#tapFinish',modal).style.display='';
+    AudioEngine.ensure();
+    AudioEngine.setPattern(currentRhythm().pattern);
+    AudioEngine.startMetronome(s.bpm, s.timeSig, ()=>{});
     tick();
   };
   $('#tapChange',modal).onclick = ()=>{
@@ -2082,7 +2082,7 @@ function openTapRecorder(){
     if(tapTimes.length>=chords.length) $('#tapChange',modal).style.display='none';
   };
   $('#tapFinish',modal).onclick = async ()=>{
-    running = false; cancelAnimationFrame(rafId);
+    running = false; cancelAnimationFrame(rafId); AudioEngine.stopMetronome();
     if(tapTimes.length<2){ toast('Yeterli akor değişimi kaydedilmedi','err'); return; }
     const times = tapTimes.slice();
     if(times.length===chords.length) times.push(performance.now()/1000-startPerf);
@@ -2098,7 +2098,7 @@ function openTapRecorder(){
     closeModal();
     toast('Akor zamanları kaydedildi 🎉');
   };
-  $('#tapCancel',modal).onclick = ()=>{ running=false; cancelAnimationFrame(rafId); closeModal(); };
+  $('#tapCancel',modal).onclick = ()=>{ running=false; cancelAnimationFrame(rafId); AudioEngine.stopMetronome(); closeModal(); };
 }
 function openMeasureEditor(){
   const s = State.currentSong;
