@@ -2001,19 +2001,31 @@ function openTapRecorder(){
   const chords = tl.map(t=>t.chord);
   if(!chords.length){ toast('Bu şarkıda akor yok','err'); return; }
   const sections = effectiveSections();
-  const lyricsHtml = sections.map((sec,si)=>{
-    const lines = sec.lines.map((line,li)=>{
-      if(!line.units.length || (line.units.length===1 && !line.units[0].chord && !line.units[0].text.trim())){
-        return `<div class="emptyline"></div>`;
-      }
-      const clus = line.units.map((u,ui)=>{
-        const words = u.text.length ? escapeHtml(u.text) : '&nbsp;';
-        const chordIdx = u.chord ? tl.findIndex(t=> t.sec===si && t.line===li && t.u===ui) : -1;
-        return `<span class="clu" ${chordIdx>=0?`data-chordidx="${chordIdx}"`:''}>${chordTagSpan(u.chord)}<span class="lyricword">${words}</span></span>`;
+  // Timeline order (buildTimeline -> flattenWordUnits) is: for each section, for each repeat
+  // pass, for each line/unit in order. A repeated chorus must be WRITTEN OUT again per pass here
+  // too — showing it once with a "×2" badge left the user tapping through the same displayed
+  // lyrics twice with no indication which pass they were on, and the old lookup-by-position
+  // always re-matched pass 1, so the highlight jumped backwards on every repeat.
+  let chordCounter = 0;
+  const lyricsHtml = sections.map(sec=>{
+    const repeat = Math.max(1, sec.repeat||1);
+    let passesHtml = '';
+    for(let pass=0; pass<repeat; pass++){
+      const lines = sec.lines.map(line=>{
+        if(!line.units.length || (line.units.length===1 && !line.units[0].chord && !line.units[0].text.trim())){
+          return `<div class="emptyline"></div>`;
+        }
+        const clus = line.units.map(u=>{
+          const words = u.text.length ? escapeHtml(u.text) : '&nbsp;';
+          const chordIdx = u.chord ? chordCounter++ : -1;
+          return `<span class="clu" ${chordIdx>=0?`data-chordidx="${chordIdx}"`:''}>${chordTagSpan(u.chord)}<span class="lyricword">${words}</span></span>`;
+        }).join('');
+        return `<div class="lyric-line">${clus}</div>`;
       }).join('');
-      return `<div class="lyric-line">${clus}</div>`;
-    }).join('');
-    return `<div class="section-block"><div class="section-title">${escapeHtml(sec.name)}</div>${lines}</div>`;
+      const passLabel = repeat>1 ? ` <span style="font-size:.72rem;color:var(--text-dim);">(${pass+1}. tekrar)</span>` : '';
+      passesHtml += `<div class="section-title">${escapeHtml(sec.name)}${passLabel}</div>${lines}`;
+    }
+    return `<div class="section-block">${passesHtml}</div>`;
   }).join('');
   let tapTimes = [];
   let running = false, startPerf = 0, rafId = null;
