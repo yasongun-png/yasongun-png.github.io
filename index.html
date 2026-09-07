@@ -2007,8 +2007,17 @@ function openTapRecorder(){
   // lyrics twice with no indication which pass they were on, and the old lookup-by-position
   // always re-matched pass 1, so the highlight jumped backwards on every repeat.
   let chordCounter = 0;
-  const lyricsHtml = sections.map(sec=>{
+  const lyricsHtml = sections.map((sec,si)=>{
     const repeat = Math.max(1, sec.repeat||1);
+    // The repeat count itself lives on the section (set via the main lyrics view's 🔁 button) —
+    // if it's wrong or was never set, a chorus that actually repeats gets tapped through only
+    // once here, silently desyncing the recording. Let the user fix it right here before
+    // starting, instead of having to close this modal to go find the 🔁 button elsewhere.
+    const repeatCtl = ` <span class="tap-repeat-ctl" data-si="${si}" style="margin-left:6px; white-space:nowrap;">
+      <button class="btn icon tap-repeat-minus" data-si="${si}" style="padding:1px 7px; min-width:0; min-height:0; font-size:.75rem;">–</button>
+      <span style="font-size:.72rem;color:var(--text-dim);">${repeat}× tekrar</span>
+      <button class="btn icon tap-repeat-plus" data-si="${si}" style="padding:1px 7px; min-width:0; min-height:0; font-size:.75rem;">+</button>
+    </span>`;
     let passesHtml = '';
     for(let pass=0; pass<repeat; pass++){
       const lines = sec.lines.map(line=>{
@@ -2023,7 +2032,7 @@ function openTapRecorder(){
         return `<div class="lyric-line">${clus}</div>`;
       }).join('');
       const passLabel = repeat>1 ? ` <span style="font-size:.72rem;color:var(--text-dim);">(${pass+1}. tekrar)</span>` : '';
-      passesHtml += `<div class="section-title">${escapeHtml(sec.name)}${passLabel}</div>${lines}`;
+      passesHtml += `<div class="section-title">${escapeHtml(sec.name)}${passLabel}${pass===0?repeatCtl:''}</div>${lines}`;
     }
     return `<div class="section-block">${passesHtml}</div>`;
   }).join('');
@@ -2062,10 +2071,28 @@ function openTapRecorder(){
     const node = $(`.clu[data-chordidx="${idx}"]`, $('#tapLyricsWrap',modal));
     if(node){ node.classList.add('playing-chord'); node.scrollIntoView({block:'center', behavior:'smooth'}); }
   }
+  $('#tapLyricsWrap',modal).addEventListener('click', e=>{
+    const minus = e.target.closest('.tap-repeat-minus');
+    const plus = e.target.closest('.tap-repeat-plus');
+    if(!minus && !plus) return;
+    if(running){ toast('Kayıt sırasında tekrar sayısı değiştirilemez','err'); return; }
+    const si = +(minus||plus).dataset.si;
+    const sec = s.sections[si];
+    const n = clamp((sec.repeat||1) + (plus?1:-1), 1, 16);
+    sec.repeat = n;
+    s.updated = Date.now();
+    DB.put('songs', s).then(()=>{
+      buildTimeline(); renderLyrics();
+      closeModal();
+      openTapRecorder();
+      toast(`"${sec.name}" tekrar sayısı ${n}× oldu`);
+    });
+  });
   $('#tapStart',modal).onclick = ()=>{
     running = true; startPerf = performance.now()/1000; tapTimes = [0];
     updateDisplay(0);
     $('#tapIntro',modal).style.display='none';
+    $$('.tap-repeat-ctl',modal).forEach(el=> el.style.display='none');
     $('#tapLyricsWrap',modal).style.maxHeight='50vh';
     $('#tapStart',modal).style.display='none';
     $('#tapChange',modal).style.display='';
