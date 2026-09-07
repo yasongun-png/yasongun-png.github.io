@@ -1124,8 +1124,17 @@ const AudioEngine = (()=>{
     }
     schedulerTimer = setTimeout(scheduler, INTERVAL);
   }
+  // Same string synthesis as strumChord, but every note struck at the same instant instead of
+  // staggered — a flat/block chord (like a piano's left-hand chord) rather than a guitar strum,
+  // so the rhythm accompaniment can sound the actual harmony alongside the drum pattern without
+  // it reading as "here's a second guitar."
+  function playChordBlock(shape, when, dur, vol){
+    if(!shape) return;
+    const freqs = shapeToFrequencies(shape).filter(f=>f);
+    freqs.forEach(f=> pluckString(f, when, dur, vol));
+  }
   return {
-    ensure, setVolume, strumChord, pluckString,
+    ensure, setVolume, strumChord, pluckString, playChordBlock,
     startMetronome(newBpm, sig, cb){
       const c=ensure(); if(!c) return;
       bpm = newBpm; beatsPerMeasure = parseInt(sig)||4; current16th=0; onBeatCb=cb;
@@ -1803,6 +1812,16 @@ function tickPlayback(){
     State.player.activeIdx = idx;
     highlightChordAt(idx);
     renderChordFlow(idx);
+    // The drum pattern alone doesn't say WHICH chord is playing — sound it as a flat piano
+    // block chord alongside the rhythm, so the accompaniment carries the actual harmony too.
+    const seg = tl[idx];
+    if(seg){
+      const c = AudioEngine.ensure();
+      if(c){
+        const secondsPerBeat = 60/State.currentSong.bpm;
+        AudioEngine.playChordBlock(getChordShape(seg.chord), c.currentTime+0.02, Math.max(0.4, seg.beats*secondsPerBeat*0.9), State.settings.volume);
+      }
+    }
   }
   updateTimelineCursor(elapsed);
   if(State.player.autoScrollSpeed>0) autoScrollStep();
@@ -2081,6 +2100,12 @@ function openTapRecorder(){
     $$('.clu', $('#tapLyricsWrap',modal)).forEach(c=> c.classList.remove('playing-chord'));
     const node = $(`.clu[data-chordidx="${idx}"]`, $('#tapLyricsWrap',modal));
     if(node){ node.classList.add('playing-chord'); node.scrollIntoView({block:'center', behavior:'smooth'}); }
+    // A drum click alone doesn't confirm WHICH chord is current — sound it as a flat piano
+    // block chord alongside the rhythm, on top of the visual highlight.
+    if(chords[idx]){
+      const c = AudioEngine.ensure();
+      if(c) AudioEngine.playChordBlock(getChordShape(chords[idx]), c.currentTime+0.02, 1.4, State.settings.volume);
+    }
   }
   $('#tapLyricsWrap',modal).addEventListener('click', e=>{
     const minus = e.target.closest('.tap-repeat-minus');
