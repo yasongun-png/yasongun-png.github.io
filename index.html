@@ -1450,22 +1450,33 @@ function renderLyrics(){
   const sections = effectiveSections();
   const el = $('#lyricsWrap');
   el.style.setProperty('--font-lyrics', State.settings.fontSize+'rem');
+  // A repeated section (nakarat sung twice) used to render once with a small "×2" badge, but
+  // the timeline actually cycles through its chords/words twice — and since (sec,line,u) only
+  // identifies one DOM node, highlightChordAt() on the second pass could only ever re-select
+  // the FIRST pass's node, snapping the view (and auto-scroll) backward every time the repeat
+  // came around. Writing every pass out as its own block, tagged with which pass it is, gives
+  // each occurrence its own real DOM node to highlight/scroll to — and reads the way the singer
+  // actually experiences it: the same words, again, right where they're sung again.
   el.innerHTML = sections.map((sec,si)=>{
-    const lines = sec.lines.map((line,li)=>{
-      if(!line.units.length || (line.units.length===1 && !line.units[0].chord && !line.units[0].text.trim())){
-        return `<div class="emptyline"></div>`;
-      }
-      const clus = line.units.map((u,ui)=>{
-        const words = u.text.length ? escapeHtml(u.text) : '&nbsp;';
-        return `<span class="clu" data-sec="${si}" data-line="${li}" data-u="${ui}">${chordTagSpan(u.chord)}<span class="lyricword clickable" data-sec="${si}" data-line="${li}" data-u="${ui}">${words}</span></span>`;
-      }).join('');
-      return `<div class="lyric-line">${clus}</div>`;
-    }).join('');
-    const repeat = sec.repeat||1;
-    const repeatBadge = repeat>1 ? `<span class="repeat-badge">×${repeat}</span>` : '';
-    const repeatBtn = State.isAdmin ? `<button class="btn icon repeat-edit" data-si="${si}" title="Tekrar sayısı">🔁</button>` : '';
+    const repeat = Math.max(1, sec.repeat||1);
+    const repeatBtn = State.isAdmin ? `<button class="btn icon repeat-edit" data-si="${si}" title="Tekrar sayısı">🔁${repeat>1?` ${repeat}×`:''}</button>` : '';
     const copyBtn = State.isAdmin ? `<button class="btn icon section-copy" data-si="${si}" title="Bölümü kopyala (söz + akor + süreleriyle)">📋</button>` : '';
-    return `<div class="section-block"><div class="section-title">${escapeHtml(sec.name)}${repeatBadge}${repeatBtn}${copyBtn}</div>${lines}</div>`;
+    let passesHtml = '';
+    for(let pass=0; pass<repeat; pass++){
+      const lines = sec.lines.map((line,li)=>{
+        if(!line.units.length || (line.units.length===1 && !line.units[0].chord && !line.units[0].text.trim())){
+          return `<div class="emptyline"></div>`;
+        }
+        const clus = line.units.map((u,ui)=>{
+          const words = u.text.length ? escapeHtml(u.text) : '&nbsp;';
+          return `<span class="clu" data-sec="${si}" data-line="${li}" data-u="${ui}" data-pass="${pass}">${chordTagSpan(u.chord)}<span class="lyricword clickable" data-sec="${si}" data-line="${li}" data-u="${ui}" data-pass="${pass}">${words}</span></span>`;
+        }).join('');
+        return `<div class="lyric-line">${clus}</div>`;
+      }).join('');
+      const title = pass===0 ? `${escapeHtml(sec.name)}${repeatBtn}${copyBtn}` : escapeHtml(sec.name);
+      passesHtml += `<div class="section-title">${title}</div>${lines}`;
+    }
+    return `<div class="section-block">${passesHtml}</div>`;
   }).join('');
 }
 $('#lyricsWrap').addEventListener('click', e=>{
@@ -1489,20 +1500,20 @@ $('#lyricsWrap').addEventListener('click', e=>{
   if(!word) return;
   if(State.player.playing){
     // Jump playback to wherever was just tapped and keep going, instead of ignoring the tap.
-    const sec=+word.dataset.sec, line=+word.dataset.line, u=+word.dataset.u;
-    const idx = timelineIndexAtOrBefore(sec,line,u);
+    const sec=+word.dataset.sec, line=+word.dataset.line, u=+word.dataset.u, pass=+(word.dataset.pass||0);
+    const idx = timelineIndexAtOrBefore(sec,line,u,pass);
     if(idx>=0) seekToIndex(idx);
     return;
   }
   if(!State.isAdmin){ toast('Söz/akor düzenlemek için admin girişi gerekiyor (Ayarlar)'); return; }
   openChordPickerAt(word);
 });
-function timelineIndexAtOrBefore(sec,line,u){
+function timelineIndexAtOrBefore(sec,line,u,pass){
   const tl = State.player.timeline;
   let idx = -1;
   for(let i=0;i<tl.length;i++){
     const seg = tl[i];
-    const cmp = seg.sec-sec || seg.line-line || seg.u-u;
+    const cmp = seg.sec-sec || (seg.pass||0)-(pass||0) || seg.line-line || seg.u-u;
     if(cmp<=0) idx=i; else break;
   }
   return idx<0 ? 0 : idx;
@@ -1675,7 +1686,7 @@ function flattenWordUnits(sections){
     const repeat = Math.max(1, sec.repeat||1);
     for(let pass=0; pass<repeat; pass++){
       sec.lines.forEach((line,li)=> line.units.forEach((u,ui)=>{
-        flat.push({sec:si, line:li, u:ui, chord:u.chord});
+        flat.push({sec:si, line:li, u:ui, pass, chord:u.chord});
       }));
     }
   });
@@ -1696,7 +1707,7 @@ function buildTimeline(){
   flattenWordUnits(sections).forEach(fu=>{
     if(fu.chord){
       const beats = gaps[chordIdx]!=null ? gaps[chordIdx] : defaultBeats;
-      timeline.push({t, chord:fu.chord, sec:fu.sec, line:fu.line, u:fu.u, beats});
+      timeline.push({t, chord:fu.chord, sec:fu.sec, line:fu.line, u:fu.u, pass:fu.pass, beats});
       t += beats*secondsPerBeat;
       chordIdx++;
     }
@@ -1807,7 +1818,7 @@ function highlightChordAt(idx){
   $$('.tl-seg').forEach(c=> c.classList.remove('active'));
   const seg = State.player.timeline[idx];
   if(!seg) return;
-  const sel = `.clu[data-sec="${seg.sec}"][data-line="${seg.line}"][data-u="${seg.u}"]`;
+  const sel = `.clu[data-sec="${seg.sec}"][data-line="${seg.line}"][data-u="${seg.u}"][data-pass="${seg.pass||0}"]`;
   const node = $(sel);
   if(node){
     node.classList.add('playing-chord');
@@ -1821,7 +1832,7 @@ function highlightChordAt(idx){
   }
   const nextSeg = State.player.timeline[idx+1];
   if(nextSeg){
-    const nsel = `.clu[data-sec="${nextSeg.sec}"][data-line="${nextSeg.line}"][data-u="${nextSeg.u}"]`;
+    const nsel = `.clu[data-sec="${nextSeg.sec}"][data-line="${nextSeg.line}"][data-u="${nextSeg.u}"][data-pass="${nextSeg.pass||0}"]`;
     const nnode = $(nsel); if(nnode) nnode.classList.add('upcoming-chord');
   }
   const tlSeg = $(`.tl-seg[data-idx="${idx}"]`); if(tlSeg) tlSeg.classList.add('active');
@@ -1876,11 +1887,11 @@ $('#lyricsWrap').addEventListener('touchmove', suppressAutoScrollBriefly, {passi
    CHORD GAP EDITOR — a plain list of the song's chords in order, each with
    a +/- stepper that sets only the gap (in beats) to the next chord.
    ========================================================================= */
-function chordOccurrenceIndex(sections, sec, line, u){
+function chordOccurrenceIndex(sections, sec, line, u, pass){
   let idx = 0;
   for(const fu of flattenWordUnits(sections)){
     if(fu.chord){
-      if(fu.sec===sec && fu.line===line && fu.u===u) return idx;
+      if(fu.sec===sec && fu.line===line && fu.u===u && (fu.pass||0)===(pass||0)) return idx;
       idx++;
     }
   }
@@ -1889,10 +1900,10 @@ function chordOccurrenceIndex(sections, sec, line, u){
 function openBeatPopoverAt(chordTagEl){
   const clu = chordTagEl.closest('.clu');
   if(!clu) return;
-  const sec=+clu.dataset.sec, line=+clu.dataset.line, u=+clu.dataset.u;
+  const sec=+clu.dataset.sec, line=+clu.dataset.line, u=+clu.dataset.u, pass=+(clu.dataset.pass||0);
   const s = State.currentSong;
   const sections = effectiveSections();
-  const idx = chordOccurrenceIndex(sections, sec, line, u);
+  const idx = chordOccurrenceIndex(sections, sec, line, u, pass);
   if(idx<0) return;
   const gaps = (s.chordGaps||[]).slice();
   let beats = gaps[idx]!=null ? gaps[idx] : (s.chordDuration||2);
