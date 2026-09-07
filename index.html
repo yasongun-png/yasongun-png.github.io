@@ -1397,6 +1397,7 @@ function renderSongHeader(){
         </div>
       </div>
       <div class="editbtns" style="display:flex; gap:6px; flex-wrap:wrap;">
+        ${s.youtubeUrl?`<a class="btn icon" id="btnYoutubeLink" href="${escapeHtml(s.youtubeUrl)}" target="_blank" rel="noopener" title="YouTube Music'te aç" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none;">▶️</a>`:''}
         <button class="btn icon" id="btnFavToggle" title="Favori">${s.favorite?'★':'☆'}</button>
         ${State.isAdmin?'<button class="btn icon" id="btnEditSong" title="Düzenle">✏️</button>':''}
         ${State.isAdmin?'<button class="btn icon" id="btnTimingEditor" title="Akorlar Arası Süre">⏱</button>':''}
@@ -2017,9 +2018,10 @@ function openTapRecorder(){
   let tapTimes = [];
   let running = false, startPerf = 0, rafId = null;
   const modal = openModal(`
-    <h2>🎙 Dinleyerek Akor Zamanı Kaydet</h2>
-    <div style="font-size:.8rem;color:var(--text-dim);margin-bottom:10px;">
-      Şarkıyı bir kaynaktan çalmaya başla (bu uygulamadan ya da başka bir yerden dinleyerek), her akor değiştiği anda büyük butona bas. Gerçek zaman aralıkları akor sürelerine dönüştürülüp kaydedilecek.
+    <h2 style="margin-bottom:4px;">🎙 Dinleyerek Akor Zamanı Kaydet</h2>
+    <div id="tapIntro" style="font-size:.68rem;color:var(--text-dim);margin-bottom:6px; line-height:1.3;">
+      Şarkıyı çalmaya başla, her akor değiştiğinde büyük butona bas.
+      ${s.youtubeUrl?` <a href="${escapeHtml(s.youtubeUrl)}" target="_blank" rel="noopener">▶️ YouTube Music'te aç</a>`:''}
     </div>
     <div id="tapLyricsWrap" style="max-height:34vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:10px; background:var(--panel-2, rgba(127,127,127,.06));">${lyricsHtml}</div>
     <div style="text-align:center; padding:10px 0;">
@@ -2052,6 +2054,8 @@ function openTapRecorder(){
   $('#tapStart',modal).onclick = ()=>{
     running = true; startPerf = performance.now()/1000; tapTimes = [0];
     updateDisplay(0);
+    $('#tapIntro',modal).style.display='none';
+    $('#tapLyricsWrap',modal).style.maxHeight='44vh';
     $('#tapStart',modal).style.display='none';
     $('#tapChange',modal).style.display='';
     $('#tapFinish',modal).style.display='';
@@ -2305,7 +2309,7 @@ function closeModal(){ $('#modalRoot').innerHTML=''; }
    ========================================================================= */
 function openEditor(song){
   const isNew = !song;
-  const s = song || {id:uid(), title:'', artist:'', album:'', key:'C', bpm:100, timeSig:'4/4', capo:0, rhythmId:'basic44', genre:'', notes:'', favorite:false, tags:[], sections:[{name:'Verse',lines:[]}], chordDuration:2, tuning:'Standard E', instrument:'guitar', created:Date.now(), updated:Date.now()};
+  const s = song || {id:uid(), title:'', artist:'', album:'', key:'C', bpm:100, timeSig:'4/4', capo:0, rhythmId:'basic44', genre:'', notes:'', favorite:false, tags:[], sections:[{name:'Verse',lines:[]}], chordDuration:2, tuning:'Standard E', instrument:'guitar', youtubeUrl:'', created:Date.now(), updated:Date.now()};
   const workingSections = JSON.parse(JSON.stringify(s.sections));
   const modal = openModal(`
     <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
@@ -2321,6 +2325,7 @@ function openEditor(song){
       <div class="formrow"><label>Capo</label><select id="eCapo">${Array.from({length:13},(_,i)=>`<option value="${i}" ${s.capo===i?'selected':''}>${i}</option>`).join('')}</select></div>
       <div class="formrow"><label>Ritim</label><select id="eRhythm">${State.rhythms.map(r=>`<option value="${r.id}" ${s.rhythmId===r.id?'selected':''}>${escapeHtml(r.name)}</option>`).join('')}</select></div>
       <div class="formrow"><label>Kategori/Etiketler (virgülle)</label><input type="text" id="eTags" value="${escapeHtml((s.tags||[]).join(', '))}"></div>
+      <div class="formrow"><label>YouTube Music Linki</label><input type="url" id="eYoutube" value="${escapeHtml(s.youtubeUrl||'')}" placeholder="https://music.youtube.com/watch?v=..."></div>
     </div>
     <div class="editor-toggle">
       <button class="btn primary" id="modeSimple">🖊 Basit Mod (Söz üzerine tıkla)</button>
@@ -2396,6 +2401,7 @@ function openEditor(song){
     s.bpm=clamp(+$('#eBpm',modal).value||100,40,240); s.timeSig=$('#eSig',modal).value; s.capo=+$('#eCapo',modal).value;
     s.rhythmId=$('#eRhythm',modal).value;
     s.tags = $('#eTags',modal).value.split(',').map(t=>t.trim()).filter(Boolean);
+    s.youtubeUrl = $('#eYoutube',modal).value.trim();
     s.sections = workingSections; s.updated = Date.now();
     await DB.put('songs', s);
     if(isNew) State.songs.push(s); else State.songs = State.songs.map(x=>x.id===s.id?s:x);
@@ -2512,6 +2518,7 @@ function openImportModal(){
         if(obj.genre) song.genre = obj.genre;
         if(obj.notes) song.notes = obj.notes;
         if(obj.album) song.album = obj.album;
+        if(obj.youtubeUrl) song.youtubeUrl = obj.youtubeUrl;
       } else {
         // ChordPro or TXT
         const titleM = text.match(/\{title:\s*([^}]+)\}/i);
