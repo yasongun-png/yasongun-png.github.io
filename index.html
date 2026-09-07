@@ -938,19 +938,27 @@ const FirebaseSync = (()=>{
   }
   function reset(){ localStorage.removeItem(LS_KEY); }
   function getSyncCode(){ return (State.settings.syncCode||'').trim(); }
-  // Fire-and-forget: a personal sync push failing (offline, no code set, no rules) must never
-  // block or break the local save that triggered it — DB.put()/delete() already succeeded.
+  // Fire-and-forget: a personal sync push failing (offline, no code set, no rules, or the
+  // record's own shape being invalid) must never block or break the local save that triggered
+  // it — DB.put()/delete() already succeeded. Firestore's SDK validates data like nested arrays
+  // SYNCHRONOUSLY and throws before ever returning a promise, so a bare .catch() on the result
+  // does nothing — the try/catch here is the part that actually stops one bad record from
+  // taking down whichever await chain called this (which, for pullAndMerge, is startup itself).
   function pushRecord(store, obj){
     const code = getSyncCode();
     if(!connected || !code) return;
-    db.collection('userLibraries').doc(code).collection(store).doc(obj.id).set(obj)
-      .catch(e=> console.error('Firestore push failed', e));
+    try{
+      db.collection('userLibraries').doc(code).collection(store).doc(obj.id).set(obj)
+        .catch(e=> console.error('Firestore push failed', e));
+    }catch(e){ console.error('Firestore push failed (invalid data?)', e); }
   }
   function deleteRecord(store, id){
     const code = getSyncCode();
     if(!connected || !code) return;
-    db.collection('userLibraries').doc(code).collection(store).doc(id).delete()
-      .catch(e=> console.error('Firestore delete-sync failed', e));
+    try{
+      db.collection('userLibraries').doc(code).collection(store).doc(id).delete()
+        .catch(e=> console.error('Firestore delete-sync failed', e));
+    }catch(e){ console.error('Firestore delete-sync failed', e); }
   }
   // Pull the syncCode's remote songs/setlists and merge with what's already local, newest
   // `updated` timestamp per id wins; anything only local gets pushed up so the remote side
@@ -1000,101 +1008,9 @@ function makeSong(o){
     created:now, updated:now
   }, o, {sections: parseChordProBody(o.body||'')});
 }
-const DEMO_SONGS = [
-  makeSong({
-    title:"Üsküdar'a Gider İken (Kâtibim)", artist:'Anonim', album:'Geleneksel Türk Halk Müziği', key:'Am', bpm:96, timeSig:'4/4', capo:0,
-    genre:'Türkü', tags:['Türkçe','Türkü','Anonim','Geleneksel'],
-    body:`{section: Verse 1}
-[Am]Üsküdar'a [Dm]gider iken [E]aldı da bir [Am]yağmur
-[Am]Kâtibimin [Dm]setresi uzun, [E]eteği [Am]çamur
-[Am]Kâtip uykudan [Dm]uyanmış, [E]gözleri [Am]mahmur
-
-{section: Nakarat}
-[C]Kâtip be[G]nim, ben kâ[Am]tibin, [E]el ne ka[Am]rışır
-[C]Kâtibime [G]kolalı da [Am]gömlek ne [E]güzel ya[Am]raşır
-
-{section: Verse 2}
-[Am]Üsküdar'a [Dm]gider iken [E]bir mendil [Am]buldum
-[Am]Mendilimin [Dm]içine [E]lokum dol[Am]durdum
-[Am]Ben bir gü[Dm]zele tutuldum, [E]adı ne de[Am]sem
-
-{section: Nakarat}
-[C]Kâtip be[G]nim, ben kâ[Am]tibin, [E]el ne ka[Am]rışır
-[C]Kâtibime [G]kolalı da [Am]gömlek ne [E]güzel ya[Am]raşır`
-  }),
-  makeSong({
-    title:'Amazing Grace', artist:'Traditional (John Newton)', album:'Public Domain', key:'G', bpm:70, timeSig:'3/4', capo:0,
-    genre:'Traditional', tags:['İngilizce','Geleneksel','Slow'],
-    body:`{section: Verse 1}
-[G]Amazing grace, how [G7]sweet the [C]sound [G]
-That [Em]saved a [D]wretch like [G]me [D]
-[G]I once was [G7]lost, but [C]now am [G]found
-Was [Em]blind but [D]now I [G]see
-
-{section: Verse 2}
-[G]'Twas grace that [G7]taught my [C]heart to [G]fear
-And [Em]grace my [D]fears re[G]lieved
-[G]How precious [G7]did that [C]grace ap[G]pear
-The [Em]hour I [D]first be[G]lieved`
-  }),
-  makeSong({
-    title:'House of the Rising Sun (Traditional Variant)', artist:'Traditional', album:'Public Domain', key:'Am', bpm:120, timeSig:'6/8', capo:0,
-    genre:'Traditional', tags:['İngilizce','Geleneksel','Blues'],
-    body:`{section: Verse 1}
-[Am]There is a [C]house in [D]New Or[F]leans
-They [Am]call the [C]Rising [E]Sun
-[Am]It's been the [C]ruin of [D]many a poor [F]soul
-And [Am]God I [E]know I'm [Am]one`
-  }),
-  makeSong({
-    title:'Twinkle Twinkle Little Star', artist:'Traditional (Jane Taylor)', album:'Public Domain', key:'C', bpm:100, timeSig:'4/4', capo:0,
-    genre:'Traditional', tags:['Çocuk','Geleneksel'],
-    body:`{section: Verse}
-[C]Twinkle twinkle [F]little [C]star
-[C]How I [G]wonder [C]what you [G]are
-[F]Up a[C]bove the [F]world so [C]high
-[F]Like a [C]diamond [G]in the [C]sky
-[C]Twinkle twinkle [F]little [C]star
-[C]How I [G]wonder [C]what you [G]are`
-  }),
-  makeSong({
-    title:'Greensleeves', artist:'Traditional (English Folk)', album:'Public Domain', key:'Am', bpm:90, timeSig:'6/8', capo:0,
-    genre:'Traditional', tags:['Geleneksel','Akustik'],
-    body:`{section: Verse 1}
-[Am]Alas my [C]love you [D]do me [Am]wrong
-To [Am]cast me [G]off dis[Em]courteous[Am]ly
-[Am]For I have [C]loved you [D]well and [Am]long
-De[Am]lighting [E]in your [Am]company`
-  }),
-  makeSong({
-    title:'Sonbahar Rüzgarı', artist:'ChordStage Demo', album:'Orijinal Demo', key:'Em', bpm:84, timeSig:'4/4', capo:0,
-    genre:'Akustik', tags:['Türkçe','Orijinal','Akustik'],
-    body:`{section: Intro}
-[Em] [C] [G] [D]
-
-{section: Verse 1}
-[Em]Bu akşam [C]yine [G]yalnızım [D]
-[Em]Sokaklarda [C]seni [G]aradım [D]
-[Em]Rüzgar [C]savurur [G]yaprakları [D]
-[Em]Aklımda [C]hep [G]o anlar [D]
-
-{section: Chorus}
-[C]Dön [D]desem [Em]duyar [C]mısın
-[C]Rüzgar [D]gibi [Em]geçer [C]mi bu [D]hüzün
-[C]Belki [D]bir gün [Em]yollarımız [C]kesişir
-[C]O za[D]man her [Em]şey ge[C]çişir`
-  }),
-  makeSong({
-    title:'Sahil Şarkısı', artist:'ChordStage Demo', album:'Orijinal Demo', key:'D', bpm:112, timeSig:'4/4', capo:0,
-    genre:'Pop', tags:['Türkçe','Orijinal','Pop'],
-    body:`{section: Verse 1}
-[D]Deniz [A]kenarında [Bm]yürüyoruz [G]biz
-[D]Güneş [A]batarken [G]söylüyoruz [A]şarkımızı
-{section: Chorus}
-[G]Bu [A]yaz [Bm]hiç [G]bitmesin
-[G]Bu [A]an [D]hep [G]sürsün [A]`
-  }),
-];
+// Demo/sample songs removed by request — first-time visitors with no reachable published
+// catalog now just see an empty library instead of built-in example songs.
+const DEMO_SONGS = [];
 const DEMO_RHYTHMS = [
   {id:'basic44', name:'Basit 4/4', timeSig:'4/4', bpmSuggest:90, pattern:['D','D','D','D']},
   {id:'pop44', name:'Pop 4/4', timeSig:'4/4', bpmSuggest:100, pattern:['D','DU','U','DU']},
@@ -1113,6 +1029,7 @@ const DEMO_RHYTHMS = [
   {id:'punk44', name:'Punk', timeSig:'4/4', bpmSuggest:175, pattern:['D','U','D','U']},
   {id:'metal44', name:'Metal', timeSig:'4/4', bpmSuggest:150, pattern:['D','D','U','D']},
   {id:'hiphop44', name:'Hip-Hop / RnB', timeSig:'4/4', bpmSuggest:85, pattern:['D','-','U','-']},
+  {id:'trap44', name:'Melodik Trap / Hip-Hop', timeSig:'4/4', bpmSuggest:140, pattern:['D','-','D','-','U','-','D','-']},
   {id:'samba24', name:'Samba', timeSig:'2/4', bpmSuggest:110, pattern:['D','U','DU','U']},
   {id:'aksak98', name:'Türkü 9/8 (Aksak)', timeSig:'9/8', bpmSuggest:100, pattern:['D','-','D','-','D','-','D','U','U']},
   {id:'mixed78', name:'7/8 Karışık', timeSig:'7/8', bpmSuggest:120, pattern:['D','-','D','-','D','U','U']},
@@ -3012,13 +2929,22 @@ window.addEventListener('resize', snapHorizontalScroll, {passive:true});
     await loadAll();
     renderSongList();
     showView('library');
-    if(FirebaseSync.isConnected() && FirebaseSync.getSyncCode()){
-      const counts = await FirebaseSync.pullAndMerge();
-      if(counts.songs || counts.setlists){ State.songs = await DB.getAll('songs'); State.setlists = await DB.getAll('setlists'); renderSongList(); }
-    }
   }catch(err){
     console.error(err);
     toast('Veritabanı yüklenemedi: '+err.message, 'err');
+    return;
+  }
+  // Kept separate from the load above: a Firestore sync problem is not a local-database
+  // problem, and must never block the app from finishing startup or show the scarier
+  // "Veritabanı yüklenemedi" message for what's actually just a remote sync hiccup.
+  if(FirebaseSync.isConnected() && FirebaseSync.getSyncCode()){
+    try{
+      const counts = await FirebaseSync.pullAndMerge();
+      if(counts.songs || counts.setlists){ State.songs = await DB.getAll('songs'); State.setlists = await DB.getAll('setlists'); renderSongList(); }
+    }catch(err){
+      console.error('Firestore sync failed', err);
+      toast('Firestore senkronu başarısız: '+err.message, 'err');
+    }
   }
 })();
 </script>
