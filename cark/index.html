@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gün Çarkı</title>
+<meta name="description" content="Arkadaşlarla yapılan gün için aylık Çarkıfelek çekilişi">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#12141a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gün Çarkı">
+<style>
+:root{
+  --bg:#f4f5f7; --card:#ffffff; --card2:#eef0f3; --border:#dcdfe4;
+  --text:#1b1e24; --dim:#6b7280; --accent:#3563e9; --danger:#dc2626; --ok:#16a34a;
+  --radius:12px; --shadow:0 2px 10px rgba(0,0,0,.08);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#12141a; --card:#1b1e26; --card2:#232733; --border:#323846;
+    --text:#eef0f4; --dim:#98a1b3; --accent:#5c8bff; --danger:#f87171; --ok:#4ade80; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.4}
+main{max-width:1000px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:4px 0 16px;text-align:center}
+h2{font-size:1.05rem;margin:0 0 12px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media (min-width:860px){.grid{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:16px}
+.wheel-wrap{position:relative;width:100%;max-width:440px;margin:0 auto;aspect-ratio:1}
+canvas{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+.pointer{position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:0;height:0;
+  border-left:16px solid transparent;border-right:16px solid transparent;border-top:30px solid var(--danger);
+  filter:drop-shadow(0 2px 2px rgba(0,0,0,.3));z-index:2}
+.center-info{text-align:center;margin-top:14px}
+.month{font-size:1.1rem;font-weight:600}
+.pot{color:var(--dim);font-size:.9rem;margin-top:2px}
+button{font:inherit;border-radius:10px;border:1px solid var(--border);background:var(--card2);
+  color:var(--text);padding:8px 14px;cursor:pointer}
+button:hover{filter:brightness(.97)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--danger)}
+button.big{font-size:1.2rem;padding:12px 36px;margin-top:12px;font-weight:700}
+button.icon{padding:4px 10px}
+input,select{font:inherit;color:var(--text);background:var(--card2);border:1px solid var(--border);
+  border-radius:10px;padding:8px 10px;min-width:0}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row input[type=text]{flex:1 1 140px}
+ul{list-style:none;margin:12px 0 0;padding:0}
+li.p{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border)}
+li.p:first-child{border-top:none}
+.dot{width:14px;height:14px;border-radius:50%;flex:none}
+.name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.done .name{color:var(--dim);text-decoration:line-through}
+.badge{font-size:.78rem;padding:2px 8px;border-radius:999px;background:var(--card2);
+  border:1px solid var(--border);color:var(--dim);white-space:nowrap}
+.hist li{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid var(--border)}
+.hist li:first-child{border-top:none}
+.hist .m{color:var(--dim)}
+.muted{color:var(--dim);font-size:.88rem}
+.settings{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center}
+.stack{display:flex;flex-direction:column;gap:16px}
+.footer-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+dialog{border:none;border-radius:16px;padding:24px;max-width:min(420px,calc(100vw - 32px));
+  background:var(--card);color:var(--text);text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+.winner{font-size:2rem;font-weight:800;margin:8px 0}
+.confetti{position:fixed;inset:0;pointer-events:none;z-index:100}
+</style>
+</head>
+<body>
+<main>
+  <h1>🎡 Gün Çarkı</h1>
+  <div class="grid">
+    <section class="card">
+      <div class="wheel-wrap">
+        <div class="pointer"></div>
+        <canvas id="wheel" width="880" height="880"></canvas>
+      </div>
+      <div class="center-info">
+        <div class="month" id="nextMonth"></div>
+        <div class="pot" id="pot"></div>
+        <button class="primary big" id="spinBtn">ÇEVİR</button>
+        <div class="muted" id="spinHint" style="margin-top:8px"></div>
+      </div>
+    </section>
+
+    <div class="stack">
+      <section class="card">
+        <h2>Katılımcılar</h2>
+        <form class="row" id="addForm">
+          <input type="text" id="nameIn" placeholder="İsim" maxlength="30" required>
+          <select id="sharesIn" aria-label="Hisse sayısı">
+            <option value="1">1 hisse</option>
+            <option value="2">2 hisse</option>
+            <option value="3">3 hisse</option>
+          </select>
+          <button class="primary" type="submit">Ekle</button>
+        </form>
+        <ul id="people"></ul>
+        <p class="muted" id="summary"></p>
+      </section>
+
+      <section class="card">
+        <h2>Kazananlar</h2>
+        <ul class="hist" id="history"></ul>
+        <div class="footer-actions">
+          <button id="undoBtn">Son çekilişi geri al</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Ayarlar</h2>
+        <div class="settings">
+          <label for="startIn">Başlangıç ayı</label>
+          <input type="month" id="startIn">
+          <label for="amountIn">Hisse başı aylık ödeme (€)</label>
+          <input type="number" id="amountIn" min="0" step="50" placeholder="ör. 100">
+        </div>
+        <div class="footer-actions">
+          <button id="exportBtn">Yedeği indir</button>
+          <button id="importBtn">Yedekten yükle</button>
+          <input type="file" id="importFile" accept="application/json" hidden>
+          <button class="danger" id="resetBtn">Her şeyi sıfırla</button>
+        </div>
+        <p class="muted">Veriler bu cihazın tarayıcısında saklanır. Başka cihaza taşımak için yedeği indirip orada yükleyin.</p>
+      </section>
+    </div>
+  </div>
+</main>
+
+<dialog id="winDlg">
+  <div class="muted" id="winMonth"></div>
+  <div class="winner" id="winName"></div>
+  <div class="muted" id="winNote"></div>
+  <div class="footer-actions" style="justify-content:center;margin-top:18px">
+    <button class="primary" id="saveWin">Kaydet ve çarktan çıkar</button>
+    <button id="discardWin">Sayma, tekrar çevir</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const KEY = 'gun-carki-v1';
+  const COLORS = ['#e6194b','#3cb44b','#f58231','#4363d8','#911eb4','#46c0c0','#f032e6','#9a6324',
+    '#808000','#e6a700','#000075','#c71585','#2e8b57','#ff6f61','#6a5acd','#008080'];
+  const MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+  const $ = id => document.getElementById(id);
+
+  function defaultStart(){
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  const SEED = [['Fatih',2],['Emre',2],['Yaşar',1],['Mehmet',1],['Kadir',1],['Mehmet İSG',2],['Uğur',2],['Hasan',1]];
+  const seeded = () => ({
+    people: SEED.map(([name, shares], i) => ({ id: i + 1, name, shares, color: COLORS[i] })),
+    history: [], start: defaultStart(), amount: '100', nextId: SEED.length + 1 });
+  let state = seeded();
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY));
+    if (saved && Array.isArray(saved.people)) state = Object.assign(state, saved);
+  } catch (e) {}
+  function save(){ try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  const monthLabel = i => {
+    const [y, m] = state.start.split('-').map(Number);
+    const t = (m - 1) + i;
+    return `${MONTHS[t % 12]} ${y + Math.floor(t / 12)}`;
+  };
+  // Kura: the first Monday of the month
+  const drawDate = i => {
+    const [y, m] = state.start.split('-').map(Number);
+    const d = new Date(y, m - 1 + i, 1);
+    d.setDate(1 + (8 - d.getDay()) % 7);
+    return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} Pazartesi`;
+  };
+  const wonCount = id => state.history.filter(h => h.id === id).length;
+  const remaining = p => Math.max(0, p.shares - wonCount(p.id));
+  const totalShares = () => state.people.reduce((s, p) => s + p.shares, 0);
+
+  // Each remaining share is one slice. Shares of the same person are spread apart
+  // by placing everyone's 1st share first, then everyone's 2nd share, and so on.
+  function slices(){
+    const out = [];
+    const max = Math.max(0, ...state.people.map(remaining));
+    for (let r = 0; r < max; r++)
+      for (const p of state.people) if (remaining(p) > r) out.push(p);
+    return out;
+  }
+
+  // ---------- wheel drawing ----------
+  const cv = $('wheel'), ctx = cv.getContext('2d');
+  let rotation = 0, spinning = false;
+
+  function draw(){
+    const s = slices(), W = cv.width, R = W / 2 - 8, c = W / 2;
+    ctx.clearRect(0, 0, W, W);
+    if (!s.length){
+      ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--card2');
+      ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--dim');
+      ctx.font = '600 40px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(state.people.length ? 'Herkes kazandı 🎉' : 'Katılımcı ekleyin', c, c);
+      return;
+    }
+    const a = Math.PI * 2 / s.length;
+    s.forEach((p, i) => {
+      // slice i is centered at angle rotation + i*a, measured from the top (12 o'clock)
+      const st = rotation + i * a - a / 2 - Math.PI / 2;
+      ctx.beginPath(); ctx.moveTo(c, c); ctx.arc(c, c, R, st, st + a); ctx.closePath();
+      ctx.fillStyle = p.color; ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
+      ctx.save();
+      ctx.translate(c, c); ctx.rotate(st + a / 2);
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      const fs = Math.max(18, Math.min(40, 600 / s.length + 10));
+      ctx.font = `700 ${fs}px system-ui`;
+      ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 4;
+      let name = p.name;
+      while (ctx.measureText(name).width > R - 90 && name.length > 2) name = name.slice(0, -1);
+      if (name !== p.name) name += '…';
+      ctx.fillText(name, R - 24, 0);
+      ctx.restore();
+    });
+    ctx.beginPath(); ctx.arc(c, c, 46, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 6; ctx.strokeStyle = '#1b1e24'; ctx.stroke();
+  }
+
+  function randomFloat(){
+    const b = new Uint32Array(1); crypto.getRandomValues(b); return b[0] / 4294967296;
+  }
+
+  const TAU = Math.PI * 2;
+  const norm = x => ((x % TAU) + TAU) % TAU;
+
+  // Spin with initial angular velocity v0 (rad/ms, + = clockwise). The wheel coasts
+  // to a stop; whatever slice ends up under the pointer wins. A random factor in the
+  // coasting distance keeps the result from being steerable by the flick.
+  function spin(v0){
+    const s = slices();
+    if (spinning || !s.length) return;
+    spinning = true; render();
+    const dir = Math.sign(v0) || 1, v = Math.abs(v0), from = rotation;
+    let dist = Math.min(Math.max(v * 1800, 3 * TAU), 10 * TAU) * (0.8 + 0.4 * randomFloat());
+    // never stop right on a line between two slices: push it into the slice it is in
+    const a = TAU / s.length;
+    const off = norm(from + dir * dist + a / 2) % a - a / 2;   // pointer offset from slice center
+    const lim = a * 0.4;
+    if (Math.abs(off) > lim) dist += dir * (Math.sign(off) * lim - off);
+    const dur = Math.min(Math.max(2 * dist / v, 3500), 9000);
+    const t0 = performance.now();
+    const ease = t => 1 - (1 - t) * (1 - t);
+    function frame(now){
+      const t = Math.min(1, (now - t0) / dur);
+      rotation = from + dir * dist * ease(t);
+      draw();
+      if (t < 1) return requestAnimationFrame(frame);
+      rotation = norm(rotation); spinning = false;
+      // slice i is centered at rotation + i*a; the pointer sits at angle 0
+      showWinner(s[((Math.round(-rotation / a) % s.length) + s.length) % s.length]);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- finger / mouse flick ----------
+  let drag = null;
+  const angleAt = e => {
+    const r = cv.getBoundingClientRect();
+    return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2));
+  };
+  cv.addEventListener('pointerdown', e => {
+    if (spinning || !slices().length) return;
+    cv.setPointerCapture(e.pointerId);
+    drag = { last: angleAt(e), samples: [{ t: e.timeStamp, r: rotation }] };
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const ang = angleAt(e);
+    let d = ang - drag.last;
+    if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU;
+    drag.last = ang; rotation += d; draw();
+    drag.samples.push({ t: e.timeStamp, r: rotation });
+    if (drag.samples.length > 8) drag.samples.shift();
+  });
+  const release = e => {
+    if (!drag) return;
+    const sm = drag.samples.filter(x => e.timeStamp - x.t < 120);
+    drag = null;
+    if (sm.length < 2) return;
+    const v = (sm[sm.length - 1].r - sm[0].r) / Math.max(1, sm[sm.length - 1].t - sm[0].t);
+    if (Math.abs(v) > 0.004) spin(v);
+    else $('spinHint').textContent = 'Daha hızlı savurun 👆';
+  };
+  cv.addEventListener('pointerup', release);
+  cv.addEventListener('pointercancel', () => { drag = null; });
+
+  // ---------- winner dialog ----------
+  let pending = null;
+  function showWinner(p){
+    pending = p;
+    $('winMonth').textContent = `${monthLabel(state.history.length)} kazananı`;
+    $('winName').textContent = p.name;
+    $('winName').style.color = p.color;
+    const left = remaining(p) - 1;
+    $('winNote').textContent = p.shares > 1
+      ? (left > 0 ? `${p.shares} hisseli — çarkta ${left} hissesi daha kalacak.` : `${p.shares} hisseli — son hissesi de çıktı.`)
+      : '';
+    $('winDlg').showModal();
+    confetti();
+    render();
+  }
+  $('saveWin').onclick = () => {
+    if (pending){
+      state.history.push({ id: pending.id, name: pending.name, date: new Date().toISOString() });
+      save();
+    }
+    pending = null; $('winDlg').close(); render();
+  };
+  $('discardWin').onclick = () => { pending = null; $('winDlg').close(); render(); };
+  $('winDlg').addEventListener('cancel', e => e.preventDefault());
+
+  function confetti(){
+    const c = document.createElement('canvas'); c.className = 'confetti';
+    c.width = innerWidth; c.height = innerHeight; document.body.appendChild(c);
+    const g = c.getContext('2d');
+    const parts = Array.from({ length: 160 }, () => ({
+      x: c.width / 2, y: c.height / 3, vx: (Math.random() - .5) * 16, vy: Math.random() * -14 - 4,
+      s: 6 + Math.random() * 6, col: COLORS[Math.floor(Math.random() * COLORS.length)], r: Math.random() * 6 }));
+    let n = 0;
+    (function f(){
+      g.clearRect(0, 0, c.width, c.height);
+      for (const p of parts){ p.vy += .35; p.x += p.vx; p.y += p.vy; p.r += .2;
+        g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.col;
+        g.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); g.restore(); }
+      if (++n < 150) requestAnimationFrame(f); else c.remove();
+    })();
+  }
+
+  // ---------- lists ----------
+  function esc(s){ return s.replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+
+  function render(){
+    const s = slices(), locked = state.history.length > 0;
+    const ul = $('people'); ul.innerHTML = '';
+    state.people.forEach(p => {
+      const rem = remaining(p), li = document.createElement('li');
+      li.className = 'p' + (rem === 0 ? ' done' : '');
+      li.innerHTML = `<span class="dot" style="background:${p.color}"></span>
+        <span class="name">${esc(p.name)}</span>
+        <span class="badge">${p.shares} hisse${p.shares > 1 ? ` · ${rem} kaldı` : rem ? '' : ' · aldı'}</span>
+        <button class="icon" data-act="minus" title="Hisse azalt" ${p.shares <= 1 || p.shares <= wonCount(p.id) ? 'disabled' : ''}>−</button>
+        <button class="icon" data-act="plus" title="Hisse artır">+</button>
+        <button class="icon danger" data-act="del" title="Sil" ${wonCount(p.id) ? 'disabled' : ''}>✕</button>`;
+      li.querySelectorAll('button').forEach(b => b.onclick = () => {
+        if (spinning) return;
+        if (b.dataset.act === 'plus') p.shares++;
+        if (b.dataset.act === 'minus') p.shares--;
+        if (b.dataset.act === 'del'){
+          if (!confirm(`${p.name} silinsin mi?`)) return;
+          state.people = state.people.filter(x => x !== p);
+        }
+        save(); render();
+      });
+      ul.appendChild(li);
+    });
+    const tot = totalShares();
+    $('summary').textContent = state.people.length
+      ? `${state.people.length} kişi · ${tot} hisse · gün ${tot} ay sürer · ${s.length} hisse çarkta`
+      : 'Henüz katılımcı yok.';
+
+    const h = $('history'); h.innerHTML = '';
+    if (!state.history.length) h.innerHTML = '<li class="muted">Henüz çekiliş yapılmadı.</li>';
+    state.history.forEach((x, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="m">${monthLabel(i)}</span><strong>${esc(x.name)}</strong>`;
+      h.appendChild(li);
+    });
+    $('undoBtn').disabled = !state.history.length || spinning;
+
+    $('nextMonth').textContent = s.length ? `${monthLabel(state.history.length)} çekilişi` : 'Gün tamamlandı';
+    const amt = Number(state.amount);
+    $('pot').textContent = s.length ? `Kura: ${drawDate(state.history.length)}` +
+      (amt > 0 && tot ? ` · Kazanan alır: ${(amt * tot).toLocaleString('tr-TR')} €` : '') : '';
+    $('spinBtn').disabled = spinning || !s.length;
+    $('spinHint').textContent = !s.length ? '' : s.length === 1 ? 'Çarkta tek hisse kaldı.' : 'Çarkı parmağınızla savurun ya da ÇEVİR\'e basın.';
+    $('startIn').value = state.start;
+    $('startIn').disabled = locked;
+    $('amountIn').value = state.amount;
+    if (!spinning) draw();
+  }
+
+  // ---------- inputs ----------
+  $('addForm').onsubmit = e => {
+    e.preventDefault();
+    const name = $('nameIn').value.trim();
+    if (!name) return;
+    const used = new Set(state.people.map(p => p.color));
+    const color = COLORS.find(c => !used.has(c)) || COLORS[state.people.length % COLORS.length];
+    state.people.push({ id: state.nextId++, name, shares: Number($('sharesIn').value), color });
+    $('nameIn').value = ''; $('sharesIn').value = '1'; $('nameIn').focus();
+    save(); render();
+  };
+  $('spinBtn').onclick = () => spin(0.02 + randomFloat() * 0.015);
+  $('undoBtn').onclick = () => {
+    const last = state.history[state.history.length - 1];
+    if (last && confirm(`${monthLabel(state.history.length - 1)} çekilişi (${last.name}) geri alınsın mı?`)){
+      state.history.pop(); save(); render();
+    }
+  };
+  $('startIn').onchange = () => { if ($('startIn').value){ state.start = $('startIn').value; save(); render(); } };
+  $('amountIn').oninput = () => { state.amount = $('amountIn').value; save(); render(); };
+  $('resetBtn').onclick = () => {
+    if (!confirm('Tüm katılımcılar ve kazananlar silinecek. Emin misiniz?')) return;
+    state = { people: [], history: [], start: defaultStart(), amount: '100', nextId: 1 };
+    save(); render();
+  };
+  $('exportBtn').onclick = () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'gun-carki-yedek.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  $('importBtn').onclick = () => $('importFile').click();
+  $('importFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const d = JSON.parse(await f.text());
+      if (!Array.isArray(d.people) || !Array.isArray(d.history)) throw 0;
+      state = Object.assign({ start: defaultStart(), amount: '', nextId: 1 }, d);
+      save(); render();
+    } catch (err) { alert('Yedek dosyası okunamadı.'); }
+    e.target.value = '';
+  };
+
+  render();
+  if ('serviceWorker' in navigator && location.protocol === 'https:')
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>
