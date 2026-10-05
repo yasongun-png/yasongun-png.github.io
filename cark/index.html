@@ -5,7 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gün Çarkı</title>
 <meta name="description" content="Arkadaşlarla yapılan gün için aylık Çarkıfelek çekilişi">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎡</text></svg>">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#12141a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gün Çarkı">
 <style>
 :root{
   --bg:#f4f5f7; --card:#ffffff; --card2:#eef0f3; --border:#dcdfe4;
@@ -27,7 +33,7 @@ h2{font-size:1.05rem;margin:0 0 12px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
   box-shadow:var(--shadow);padding:16px}
 .wheel-wrap{position:relative;width:100%;max-width:440px;margin:0 auto;aspect-ratio:1}
-canvas{width:100%;height:100%;display:block}
+canvas{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
 .pointer{position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:0;height:0;
   border-left:16px solid transparent;border-right:16px solid transparent;border-top:30px solid var(--danger);
   filter:drop-shadow(0 2px 2px rgba(0,0,0,.3));z-index:2}
@@ -230,29 +236,69 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
     const b = new Uint32Array(1); crypto.getRandomValues(b); return b[0] / 4294967296;
   }
 
-  function spin(){
+  const TAU = Math.PI * 2;
+  const norm = x => ((x % TAU) + TAU) % TAU;
+
+  // Spin with initial angular velocity v0 (rad/ms, + = clockwise). The wheel coasts
+  // to a stop; whatever slice ends up under the pointer wins. A random factor in the
+  // coasting distance keeps the result from being steerable by the flick.
+  function spin(v0){
     const s = slices();
     if (spinning || !s.length) return;
     spinning = true; render();
-    const a = Math.PI * 2 / s.length;
-    const win = Math.floor(randomFloat() * s.length);
-    const jitter = (randomFloat() - 0.5) * a * 0.8;
-    // bring slice `win` to the top: rotation + win*a + jitter ≡ 0 (mod 2π)
-    const TAU = Math.PI * 2;
-    let target = -(win * a + jitter);
-    const base = rotation - ((rotation % TAU) + TAU) % TAU;
-    target = base + ((target % TAU) + TAU) % TAU + TAU * (6 + Math.floor(randomFloat() * 3));
-    const from = rotation, dur = 6000 + randomFloat() * 1500, t0 = performance.now();
-    const ease = t => 1 - Math.pow(1 - t, 4);
+    const dir = Math.sign(v0) || 1, v = Math.abs(v0), from = rotation;
+    let dist = Math.min(Math.max(v * 1800, 3 * TAU), 10 * TAU) * (0.8 + 0.4 * randomFloat());
+    // never stop right on a line between two slices: push it into the slice it is in
+    const a = TAU / s.length;
+    const off = norm(from + dir * dist + a / 2) % a - a / 2;   // pointer offset from slice center
+    const lim = a * 0.4;
+    if (Math.abs(off) > lim) dist += dir * (Math.sign(off) * lim - off);
+    const dur = Math.min(Math.max(2 * dist / v, 3500), 9000);
+    const t0 = performance.now();
+    const ease = t => 1 - (1 - t) * (1 - t);
     function frame(now){
       const t = Math.min(1, (now - t0) / dur);
-      rotation = from + (target - from) * ease(t);
+      rotation = from + dir * dist * ease(t);
       draw();
-      if (t < 1) requestAnimationFrame(frame);
-      else { rotation = ((rotation % TAU) + TAU) % TAU; spinning = false; showWinner(s[win]); }
+      if (t < 1) return requestAnimationFrame(frame);
+      rotation = norm(rotation); spinning = false;
+      // slice i is centered at rotation + i*a; the pointer sits at angle 0
+      showWinner(s[((Math.round(-rotation / a) % s.length) + s.length) % s.length]);
     }
     requestAnimationFrame(frame);
   }
+
+  // ---------- finger / mouse flick ----------
+  let drag = null;
+  const angleAt = e => {
+    const r = cv.getBoundingClientRect();
+    return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2));
+  };
+  cv.addEventListener('pointerdown', e => {
+    if (spinning || !slices().length) return;
+    cv.setPointerCapture(e.pointerId);
+    drag = { last: angleAt(e), samples: [{ t: e.timeStamp, r: rotation }] };
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const ang = angleAt(e);
+    let d = ang - drag.last;
+    if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU;
+    drag.last = ang; rotation += d; draw();
+    drag.samples.push({ t: e.timeStamp, r: rotation });
+    if (drag.samples.length > 8) drag.samples.shift();
+  });
+  const release = e => {
+    if (!drag) return;
+    const sm = drag.samples.filter(x => e.timeStamp - x.t < 120);
+    drag = null;
+    if (sm.length < 2) return;
+    const v = (sm[sm.length - 1].r - sm[0].r) / Math.max(1, sm[sm.length - 1].t - sm[0].t);
+    if (Math.abs(v) > 0.004) spin(v);
+    else $('spinHint').textContent = 'Daha hızlı savurun 👆';
+  };
+  cv.addEventListener('pointerup', release);
+  cv.addEventListener('pointercancel', () => { drag = null; });
 
   // ---------- winner dialog ----------
   let pending = null;
@@ -342,7 +388,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
     $('pot').textContent = s.length ? `Kura: ${drawDate(state.history.length)}` +
       (amt > 0 && tot ? ` · Kazanan alır: ${(amt * tot).toLocaleString('tr-TR')} €` : '') : '';
     $('spinBtn').disabled = spinning || !s.length;
-    $('spinHint').textContent = s.length === 1 ? 'Çarkta tek hisse kaldı.' : '';
+    $('spinHint').textContent = !s.length ? '' : s.length === 1 ? 'Çarkta tek hisse kaldı.' : 'Çarkı parmağınızla savurun ya da ÇEVİR\'e basın.';
     $('startIn').value = state.start;
     $('startIn').disabled = locked;
     $('amountIn').value = state.amount;
@@ -360,7 +406,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
     $('nameIn').value = ''; $('sharesIn').value = '1'; $('nameIn').focus();
     save(); render();
   };
-  $('spinBtn').onclick = spin;
+  $('spinBtn').onclick = () => spin(0.02 + randomFloat() * 0.015);
   $('undoBtn').onclick = () => {
     const last = state.history[state.history.length - 1];
     if (last && confirm(`${monthLabel(state.history.length - 1)} çekilişi (${last.name}) geri alınsın mı?`)){
@@ -393,6 +439,8 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
   };
 
   render();
+  if ('serviceWorker' in navigator && location.protocol === 'https:')
+    navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
 </script>
 </body>
